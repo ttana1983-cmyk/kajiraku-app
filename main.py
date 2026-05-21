@@ -130,7 +130,7 @@ def handle_message(event):
         
         # 調理GIFを送信
         try:
-            line_bot_api.push_message(user_id, ImageSendMessage(original_content_url=GIF_URL, preview_image_url=GIF_URL))
+            line_bot_api.push_message(user_id, ImageSendMessage(original_content_url=https://tenor.com/ja/view/bobacat-psps-cooking-cat-chef-gif-1553451374547196849, preview_image_url=https://tenor.com/ja/view/bobacat-psps-cooking-cat-chef-gif-1553451374547196849))
         except: pass
 
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
