@@ -2,25 +2,28 @@ import os
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models import (
+    MessageEvent, TextMessage, TextSendMessage, 
+    QuickReply, QuickReplyButton, MessageAction, 
+    ShowLoadingAnimationRequest
+)
 import google.generativeai as genai
 
 app = Flask(__name__)
 
-# --- 設定（Renderの環境変数から読み込みます） ---
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+# --- 環境設定 ---
+line_bot_api = LineBotApi(os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
+handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
+genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+model = genai.GenerativeModel("models/gemini-2.0-flash")
 
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(LINE_CHANNEL_SECRET)
+# --- 便利関数：ボタン（クイックリプライ）作成 ---
+def create_qr(options):
+    return QuickReply(items=[QuickReplyButton(action=MessageAction(label=opt, text=opt)) for opt in options])
 
-# Geminiの初期設定
-genai.configure(api_key=GEMINI_API_KEY)
-
-@app.route("/callback", methods=['POST'])
+@app.route("/callback", method=['POST'])
 def callback():
-    signature = request.headers.get('X-Line-Signature')
+    signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
     try:
         handler.handle(body, signature)
@@ -31,64 +34,64 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_message = event.message.text
+    user_id = event.source.user_id
 
-    try:
-        # 【修正ポイント】モデル名をシンプルにし、最新のAPIで呼び出します
-        model = genai.GenerativeModel('gemini-2.5-flash')
+    # 1. 【初回ヒアリング】男性の人数
+    if user_message in ["0人", "1人", "2人", "3人以上"]:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(
+            text="ありがとうございます！次は【女性の人数】を教えてください✨",
+            quick_reply=create_qr(["0人", "1人", "2人", "3人以上"])
+        ))
+        return
 
-        prompt = f"""
-        
-        あなたは『家事ラクAIコンシェルジュ』の「Takashi」です。
-        
-        【重要：会話の進め方ルール】
-        1. 以下の3点（家族構成・アレルギー・苦手な食材）が完全に揃うまでは、レシピの提案（URLの提示）を【厳禁】とします。
-        2. 情報が不足している間は、ユーザーとの対話を楽しみながら、1つずつ優しく聞き出してください。
-        3. 3つの情報がすべて揃ったことを確認したら、初めて「それでは、あなたにぴったりの献立を提案させていただきますね！」と宣言して、ジャンル等の選択肢を出してください。
+    # 2. 【リピート：タイミング選択】
+    elif user_message in ["☀️朝ごはん", "🍱お昼ご飯", "🌙晩ご飯"]:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(
+            text="料理のジャンルは何がよろしいですか？😊",
+            quick_reply=create_qr(["和食", "中華", "洋食", "イタリアン", "お任せ", "甘いもの"])
+        ))
+        return
 
-        【表示ルール（見やすさ徹底）】
-        ・2〜3行ごとに必ず「空行」を入れること。
-        ・重要なポイントは【】や絵文字を使って目立たせること。
+    # 3. 【リピート：ジャンル選択】
+    elif user_message in ["和食", "中華", "洋食", "イタリアン", "お任せ", "甘いもの"]:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(
+            text="今の気分はどれに近いですか？🍳",
+            quick_reply=create_qr(["🥗ヘルシー", "🧀コッテリ", "🍖ガッツリ", "🍵あっさり"])
+        ))
+        return
 
-        【冒頭の挨拶ルール】
-        ・ベータ版の案内（50秒、5回制限）は、その日の「最初の1通目」のみ。
-        ・やり取りが続いている間は、挨拶を省き、すぐに質問や回答に入ってください。
-
-        【レシピ提案時の構成（情報がすべて揃った後のみ）】
-        ---
-        【本日のご提案】
-        （レシピ名）
-        https://cookpad.com/search/[料理名]
-
-        【Takashiの家事ラク！1ポイント助言】
-        ・（減塩、カサ増し、ヘルシー、家事ラクのいずれか）
-        ---
-
-        現在のユーザーのメッセージ: {user_message}
-        """
-
-
-        # AIの生成
-        response = model.generate_content(prompt)
-
-        if response.text:
-            reply_text = response.text
-        else:
-            reply_text = "すみません、内容を考えられませんでした。"
-
-    except Exception as e:
-        # もしまた404が出るなら、こちらを試すように自動で切り替えます
+    # 4. 【最終ステップ：気分選択】→ ここでAI起動！
+    elif user_message in ["🥗ヘルシー", "🧀コッテリ", "🍖ガッツリ", "🍵あっさり"]:
+        # ローディングアニメーション（50秒稼ぐ）
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            response = model.generate_content(prompt)
-            reply_text = response.text
-        except:
-            reply_text = f"エラーが発生しました: {str(e)}"
+            line_bot_api.show_loading_animation(ShowLoadingAnimationRequest(chat_id=user_id, loading_seconds=60))
+        except: pass
+        
+        # 応援メッセージを即レス（これで安心感を与える）
+        line_bot_api.push_message(user_id, TextSendMessage(text=f"【{user_message}】ですね！了解です！\nTakashiが最高のレシピを今から50秒で考えます。少しだけお待ちくださいね🍳"))
 
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply_text)
-    )
+        # AIへの蓄積プロンプト
+        prompt = f"""
+        あなたは『家事ラクAIコンシェルジュ』の「Takashi」です。
+        元ラーメン店店長の経験を活かし、時短・節約・プロの知恵を伝えてください。
+
+        【ユーザーの希望】: {user_message} を中心としたメニュー
+
+        【ルール】
+        ・2〜3行ごとに「空行」を入れ、めちゃくちゃ見やすくすること。
+        ・レシピ名とCookpadのURL（https://cookpad.com/search/料理名）をセットで出す。
+        ・最後に「Takashiの1ポイント助言」として、減塩・カサ増し・家事ラクのいずれかのプロ技を添えること。
+
+        まずは「お疲れ様です✨」と共感から始めてください。
+        """
+        
+        response = model.generate_content(prompt)
+        line_bot_api.push_message(user_id, TextSendMessage(text=response.text))
+        return
+
+    # それ以外の自由入力
+    else:
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="「献立を考えて」や、メニューのボタンを押してみてくださいね😊"))
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run()
