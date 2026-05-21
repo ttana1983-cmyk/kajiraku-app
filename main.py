@@ -34,7 +34,7 @@ def handle_message(event):
 
     # 修正ポイント：モデルの呼び出しを最新の1.5-flashに最適化
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
 
         prompt = f"""
         あなたは『家事ラクAIコンシェルジュ』です。
