@@ -24,7 +24,7 @@ genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 # ネコシェフGIF（確実に表示されるURLに固定）
-GIF_URL = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExOHR0ZnIydmZ6ZnB6YmZ6ZnB6YmZ6ZnB6YmZ6ZnB6YmZ6ZnB6JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/C21GGDOpKT6Z4CX9oY/giphy.gif"
+GIF_URL = "https://github.com/ttana1983-cmyk/main.py/blob/main/%E3%83%8D%E3%82%B3GIF.gif"
 
 def create_qr(options):
     return QuickReply(items=[QuickReplyButton(action=MessageAction(label=opt, text=opt)) for opt in options])
