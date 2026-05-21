@@ -4,9 +4,14 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, FollowEvent,
-    QuickReply, QuickReplyButton, MessageAction, 
-    ShowLoadingAnimationRequest
+    QuickReply, QuickReplyButton, MessageAction
 )
+# アニメーション機能のインポートエラー対策
+try:
+    from linebot.models.responses import ShowLoadingAnimationRequest
+except ImportError:
+    ShowLoadingAnimationRequest = None
+
 import google.generativeai as genai
 
 app = Flask(__name__)
@@ -45,7 +50,7 @@ def handle_message(event):
     user_message = event.message.text
     user_id = event.source.user_id
 
-    # 【新設】「メニュー」や「戻る」が来たら最初の選択肢を出す
+    # 1. メニュー呼び出し / 戻る
     if user_message in ["メニュー", "最初から", "戻る", "↩️戻る"]:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="こんにちは！今からどんなご飯にしますか？😊",
@@ -53,7 +58,7 @@ def handle_message(event):
         ))
         return
 
-    # 1. 家族構成ヒアリング：男性
+    # 2. 家族構成ヒアリング：男性
     if "男性" in user_message:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="ありがとうございます！次は【女性の人数】を教えてください✨",
@@ -61,7 +66,7 @@ def handle_message(event):
         ))
         return
 
-    # 2. 家族構成ヒアリング：女性
+    # 3. 家族構成ヒアリング：女性
     elif "女性" in user_message:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="お子さん（中学生以下）はいらっしゃいますか？👶",
@@ -69,7 +74,7 @@ def handle_message(event):
         ))
         return
 
-    # 3. 家族構成ヒアリング：子供
+    # 4. 家族構成ヒアリング：子供
     elif user_message in ["いない", "乳幼児", "幼児", "小学生", "中学生"]:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="最後にご年配の方（65歳以上）はいらっしゃいますか？👵",
@@ -77,7 +82,7 @@ def handle_message(event):
         ))
         return
 
-    # 4. 家族構成完了 ➔ 最初の食事選択へ誘導
+    # 5. 家族構成完了 ➔ 最初の食事選択へ
     elif "ご年配" in user_message:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="登録完了です！バッチリ把握しました😊\nさっそく、今からどんなご飯にしますか？👇",
@@ -85,7 +90,7 @@ def handle_message(event):
         ))
         return
 
-    # 5. タイミング選択 ➔ ジャンル選択へ
+    # 6. タイミング選択 ➔ ジャンル選択へ
     elif user_message in ["☀️朝ごはん", "🍱お昼ご飯", "🌙晩ご飯"]:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="料理のジャンルは何がよろしいですか？🇯🇵🇨🇳🇫🇷",
@@ -93,7 +98,7 @@ def handle_message(event):
         ))
         return
 
-    # 6. ジャンル選択 ➔ 気分選択へ
+    # 7. ジャンル選択 ➔ 気分選択へ
     elif user_message in ["和食", "洋食", "中華", "フレンチ", "イタリアン", "お任せ"]:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="今の気分はどれに近いですか？🍳",
@@ -101,21 +106,24 @@ def handle_message(event):
         ))
         return
 
-    # 7. 気分選択 ➔ AIによる献立生成
+    # 8. 気分選択 ➔ AIによる献立生成
     elif user_message in ["🥗ヘルシー", "🧀コッテリ", "🍖ガッツリ", "🍵あっさり"]:
-        line_bot_api.show_loading_animation(ShowLoadingAnimationRequest(chat_id=user_id, loading_seconds=60))
+        # アニメーション機能が利用可能な場合のみ実行
+        if ShowLoadingAnimationRequest:
+            try:
+                line_bot_api.show_loading_animation(ShowLoadingAnimationRequest(chat_id=user_id, loading_seconds=60))
+            except:
+                pass
         
-        # ユーザーに安心感を与えるメッセージ（push_messageを使用）
         line_bot_api.push_message(user_id, TextSendMessage(text="承知しました！元ラーメン店長の経験を活かして、最高の献立を考えています...50秒ほどお待ちください🍳"))
         
-        # プロンプトの構築（ユーザーの最新の選択を反映）
         prompt = f"家族構成と、今日の気分（{user_message}）に合わせて、元プロの視点から栄養バランスも考慮した、家庭で再現可能な「最高に旨い献立」を1つ提案してください。作り方のコツも一言添えて。"
         
         response = model.generate_content(prompt)
-        line_bot_api.push_message(user_id, TextSendMessage(text=response.text))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=response.text))
         return
 
-    # 8. 再設定処理
+    # 9. 再設定処理
     elif user_message == "⚙️再設定":
         line_bot_api.reply_message(event.reply_token, TextSendMessage(
             text="家族構成を再登録しますね。まずは【男性の人数】を教えてください👇",
@@ -124,4 +132,6 @@ def handle_message(event):
         return
 
 if __name__ == "__main__":
-    app.run()
+    # Render等の環境に合わせてポートを指定（デフォルト5000）
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
