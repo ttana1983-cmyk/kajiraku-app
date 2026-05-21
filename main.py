@@ -37,7 +37,6 @@ def handle_message(event):
         model = genai.GenerativeModel('gemini-1.5-flash')
 
         prompt = f"""
-                prompt = f"""
         あなたは『家事ラクAIコンシェルジュ』です。
         
         【重要：会話のルール】
