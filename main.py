@@ -19,7 +19,7 @@ model = genai.GenerativeModel("gemini-2.5-flash")
 
 # 【ここを新しいURLに！】
 # ttana1983-cmyk さんのリポジトリ名が main.py である前提です
-GIF_URL = "https://raw.githubusercontent.com/ttana1983-cmyk/main.py/main/chef.gif"
+GIF_URL = "https:///raw.githubusercontent.com/ttana1983-cmyk/main.py/main/chef.gif"
 
 @app.route("/callback", methods=['POST'])
 def callback():
