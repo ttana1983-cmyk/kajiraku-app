@@ -9,15 +9,15 @@ import google.generativeai as genai
 
 app = Flask(__name__)
 
-# --- 【重要】ここが定義されていないとNameErrorになります ---
+# --- 環境設定 ---
 line_bot_api = LineBotApi(os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-# Takashiさん指定の2.5モデル
+# Takashiさんこだわりの 2.5 モデル
 model = genai.GenerativeModel("gemini-2.5-flash")
 
-# 正確なネコURL
+# あなたが設定した chef.gif の直リンク
 GIF_URL = "https://raw.githubusercontent.com/ttana1983-cmyk/main.py/main/chef.gif"
 
 @app.route("/callback", methods=['POST'])
@@ -35,35 +35,23 @@ def handle_message(event):
     msg = event.message.text
     token = event.reply_token 
 
-    # 特定のコマンド以外（食材入力）をレシピ生成とみなす
     if msg not in ["メニュー", "最初から", "⚙️再設定"]:
         try:
-            # プロンプトの書き方を整理
-    prompt = f"""
-あなたは元ラーメン店長の献立アドバイザーです。
-食材「{msg}」を使った、家庭で作りやすいプロ直伝の献立を1つ提案してください。
-
-【ルール】
-・語尾は少し職人気質だが、優しく親しみやすく
-・回答は300文字程度にまとめること
-・最後に必ず、その料理の作り方がわかる『実在する』レシピサイト（クックパッド、クラシル等）のURLを1つ載せること
-"""
+            # 1. Gemini 2.5 でレシピ生成
+            prompt = f"食材「{msg}」を使った献立を1つ提案してください。"
             response = model.generate_content(prompt)
-            recipe_text = response.text
-
-            # まとめて1回の「返信」で送る（これが一番エラーに強い！）
+            
+            # 2. ネコとレシピをセットで返信
             messages = [
                 TextSendMessage(text="オーダー入りました！ねこシェフ調理中...🐾"),
                 ImageSendMessage(original_content_url=GIF_URL, preview_image_url=GIF_URL),
-                TextSendMessage(text=f"🔔 ピーッ！＼ チン！ ／\n\n{recipe_text}")
+                TextSendMessage(text=f"完成です！✨\n\n{response.text}")
             ]
-            
             line_bot_api.reply_message(token, messages)
 
         except Exception as e:
-            # AI側のエラーが出た場合も返信で伝える
-            error_msg = f"わりぃ、店長ちょっと今手が離せねえ！\n(Error: {str(e)[:20]})"
-            line_bot_api.reply_message(token, TextSendMessage(text=error_msg))
+            # 万が一の時はエラー内容をLINEに送る
+            line_bot_api.reply_message(token, TextSendMessage(text=f"エラー発生：{str(e)[:50]}"))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
