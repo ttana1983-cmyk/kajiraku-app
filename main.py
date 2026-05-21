@@ -36,7 +36,7 @@ def handle_message(event):
         # 【修正ポイント】モデル名をシンプルにし、最新のAPIで呼び出します
         model = genai.GenerativeModel('gemini-1.5-flash')
 
-                prompt = f"""
+    prompt = f"""
         あなたは『家事ラクAIコンシェルジュ』です。
         
         【重要：ヒアリングのルール】
