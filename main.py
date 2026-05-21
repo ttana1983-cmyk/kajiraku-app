@@ -28,7 +28,7 @@ model = genai.GenerativeModel("models/gemini-2.0-flash")
 
 # --- 演出用GIF ---
 # Japandiな雰囲気に合う、シンプルな調理GIF（サンプル）
-GIF_URL = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJid3R3bmZyZzR4bmZ4bmZ4bmZ4bmZ4bmZ4bmZ4bmZ4bmZ4JmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/l0HlUUxwYvSJy05JS/giphy.gif"
+GIF_URL = "https://tenor.com/ja/view/bobacat-psps-cooking-cat-chef-gif-1553451374547196849"
 
 def create_qr(options):
     return QuickReply(items=[QuickReplyButton(action=MessageAction(label=opt, text=opt)) for opt in options])
