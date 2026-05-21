@@ -34,7 +34,7 @@ def handle_message(event):
 
     try:
         # 【修正ポイント】モデル名をシンプルにし、最新のAPIで呼び出します
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         prompt = f"""
         
