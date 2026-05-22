@@ -2,16 +2,13 @@ import os
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import (
-    Configuration, ApiClient, MessagingApi, 
-    ReplyMessageRequest, TextMessage
-)
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from google import genai
 
 app = Flask(__name__)
 
-# 環境変数から設定を読み込み
+# 環境変数
 conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -20,10 +17,14 @@ client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
     body = request.get_data(as_text=True)
+    
+    # 1. 署名検証だけ先に行う
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+
+    # 2. ここが重要：何はともあれ「200 OK」を先にLINEに返してタイムアウトを防ぐ
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessageContent)
@@ -32,16 +33,12 @@ def handle_message(event):
     tk = event.reply_token
 
     try:
-        # 最もシンプルな指示
-        prompt = f"食材「{msg}」を使った献立と、そのレシピが掲載されている実在するURLを1つ教えてください。"
-        
-        # 最新の高速モデル gemini-2.0-flash を使用
+        # AIの処理（ここが少し遅くても、上のcallbackが先にOKを返しているので大丈夫）
         response = client.models.generate_content(
-            model="gemini-2.5-flash", 
-            contents=prompt
+            model="gemini-2.0-flash", 
+            contents=f"食材「{msg}」の献立とURLを1つ教えて"
         )
         
-        # テキスト1通のみを返信
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
             line_api.reply_message(
@@ -51,13 +48,13 @@ def handle_message(event):
                 )
             )
     except Exception as e:
-        # エラーが起きた場合は、何が原因かLINEに表示させる
+        # エラーが起きた時だけLINEに通知
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
             line_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=tk,
-                    messages=[TextMessage(text=f"エラー発生: {str(e)}")]
+                    messages=[TextMessage(text=f"エラー: {str(e)[:50]}")]
                 )
             )
 
