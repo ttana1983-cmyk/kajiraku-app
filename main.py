@@ -8,24 +8,21 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
-# インポートエラーを防ぐための書き方
-try:
-    from google import genai
-except ImportError:
-    # ローカル環境などで万が一入っていない場合のエラー回避
-    print("Error: google-genai library not found. Please install it.")
+# 最新のGoogleライブラリをインポート
+from google import genai
 
 app = Flask(__name__)
 
-# --- 設定 ---
+# --- 設定（Renderの環境変数と連携） ---
 access_token = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 channel_secret = os.environ["LINE_CHANNEL_SECRET"]
 configuration = Configuration(access_token=access_token)
 handler = WebhookHandler(channel_secret)
 
-# 最新のクライアント初期化
+# 最新のAIクライアント初期化
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
+# ネコシェフGIF
 GIF_URL = "https://raw.githubusercontent.com/ttana1983-cmyk/main.py/main/chef.gif"
 
 @app.route("/callback", methods=['POST'])
@@ -45,17 +42,22 @@ def handle_message(event):
 
     if msg not in ["メニュー", "最初から", "⚙️再設定"]:
         try:
+            # Takashiさんこだわりのトリプルクォート指示
             prompt = f"""
-あなたは元ラーメン店長の献立アドバイザーです。食材「{msg}」を使った献立を1つ提案してください。
-【重要】実在するレシピURL（クックパッド等）を必ず載せ、300文字以内の職人気質な口調で。
+あなたは元ラーメン店長の献立アドバイザーだ。
+食材「{msg}」を使ったプロ直伝の献立を1つ提案してくれ。
+【ルール】
+1. 実在するレシピURL（クックパッド等）を必ず最後に載せること。
+2. 300文字以内、職人気質だが優しい口調で。
 """
-            # モデル名は 2.0-flash が最新で爆速です
+            # 最新のGemini 2.0-flashを使用（爆速です）
             response = client.models.generate_content(
                 model="gemini-2.0-flash", 
                 contents=prompt
             )
             recipe_text = response.text
 
+            # LINEへの返信（最新のMessagingApi方式）
             with ApiClient(configuration) as api_client:
                 line_bot_api = MessagingApi(api_client)
                 line_bot_api.reply_message(
@@ -69,7 +71,7 @@ def handle_message(event):
                     )
                 )
         except Exception as e:
-            print(f"Error: {e}")
+            # エラー時も「200」で終わらせず、原因を返信させる
             with ApiClient(configuration) as api_client:
                 line_bot_api = MessagingApi(api_client)
                 line_bot_api.reply_message(
