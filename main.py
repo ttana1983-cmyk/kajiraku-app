@@ -1,8 +1,5 @@
 import os
-import sys
 from flask import Flask, request, abort
-
-# 最新のLINE SDK v3系を想定した書き方に微調整
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -11,20 +8,20 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
-import google.generativeai as genai
+# 最新のGoogle GenAIライブラリを使用
+from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 
 # --- 設定 ---
-# Renderの環境変数から取得
 access_token = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 channel_secret = os.environ["LINE_CHANNEL_SECRET"]
-
 configuration = Configuration(access_token=access_token)
 handler = WebhookHandler(channel_secret)
 
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel("gemini-2.5-flash")
+# 最新のクライアント初期化
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 GIF_URL = "https://raw.githubusercontent.com/ttana1983-cmyk/main.py/main/chef.gif"
 
@@ -41,46 +38,43 @@ def callback():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     msg = event.message.text
-    
-    # 挨拶系はスルーして、食材の時だけ動く
+    tk = event.reply_token
+
     if msg not in ["メニュー", "最初から", "⚙️再設定"]:
         try:
-            # プロンプト（トリプルクォート維持）
+            # プロンプト（最新モデル gemini-2.0-flash 等も指定可能ですが、一旦 2.5 で）
             prompt = f"""
-あなたは元ラーメン店長の献立アドバイザーです。
-食材「{msg}」を使った、プロ直伝の献立を1つ提案してください。
-
-【厳格なルール】
-1. 実在するレシピURL（クックパッド等）を特定して載せること。
-2. 300文字以内で、職人気質な口調で。
+あなたは元ラーメン店長の献立アドバイザーです。食材「{msg}」を使った献立を1つ提案してください。
+【重要】実在するレシピURL（クックパッド等）を必ず載せ、300文字以内の職人気質な口調で。
 """
-            response = model.generate_content(prompt)
+            # 最新の生成メソッドを使用
+            response = client.models.generate_content(
+                model="gemini-2.0-flash", # 最新の高速モデルを推奨
+                contents=prompt
+            )
             recipe_text = response.text
 
-            # メッセージを最新の形式で組み立て
-            with ApiClient(configuration) as api_client:
-                line_bot_api = MessagingApi(api_client)
-                
-                # 3通のメッセージを配列にする
-                line_bot_api.reply_message_with_http_info(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[
-                            TextMessage(text="オーダー入りました！ねこシェフ調理中...🐾"),
-                            ImageMessage(original_content_url=GIF_URL, preview_image_url=GIF_URL),
-                            TextMessage(text=f"完成だ！✨\n\n{recipe_text}")
-                        ]
-                    )
-                )
-        except Exception as e:
-            print(f"Error: {e}")
-            # エラー時も返信を試みる
+            # LINE返信
             with ApiClient(configuration) as api_client:
                 line_bot_api = MessagingApi(api_client)
                 line_bot_api.reply_message(
                     ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text=f"わりぃ、エラーだ：{str(e)[:50]}")]
+                        reply_token=tk,
+                        messages=[
+                            TextMessage(text="オーダー入りました！ねこシェフ調理中...🐾"),
+                            ImageMessage(original_content_url=GIF_URL, preview_image_url=GIF_URL),
+                            TextMessage(text=f"チン！完成だ！✨\n\n{recipe_text}")
+                        ]
+                    )
+                )
+        except Exception as e:
+            print(f"Error detail: {e}")
+            with ApiClient(configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                line_bot_api.reply_message(
+                    ReplyMessageRequest(
+                        reply_token=tk,
+                        messages=[TextMessage(text=f"すまねえ、店長エラーだ：{str(e)[:50]}")]
                     )
                 )
 
