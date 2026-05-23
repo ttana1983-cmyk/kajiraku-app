@@ -36,7 +36,7 @@ def handle_message(event):
         # AIの処理：最新のライブラリ（google-genai）の書き方に統一しました
         # モデル名は確実に存在する「gemini-1.5-flash」に変更しています
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-1.5-flash",
             contents=f"食材「{msg}」の献立とURLを1つ教えて"
         )
         
