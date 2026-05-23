@@ -32,18 +32,23 @@ def handle_message(event):
     tk = event.reply_token
 
     try:
-        # AIの処理
+               # AIの処理
         response = client.models.generate_content(
             model="gemini-1.5-flash",
             contents=f"食材「{msg}」の献立とURLを1つ教えて"
         )
         
-        # 返答テキストを取得（新しいライブラリの仕様に合わせる）
-        ai_text = response.text
+        # あらゆる角度からテキストを絞り出す書き方
+        try:
+            ai_text = response.text
+        except:
+            # textで取れない場合、構造を分解して直接取りに行く
+            ai_text = response.candidates[0].content.parts[0].text
         
-        # もし ai_text が空だった場合の安全策
+        # それでも空なら警告を出す
         if not ai_text:
-            ai_text = "献立が見つかりませんでした。"
+            raise ValueError("Geminiからの返答が空でした")
+
 
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
