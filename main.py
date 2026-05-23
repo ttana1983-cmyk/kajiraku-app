@@ -1,21 +1,24 @@
 import os
-import traceback  # エラー詳細表示用
+import traceback
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
-from google import genai
+import google.generativeai as genai
 
 app = Flask(__name__)
 
-# 環境変数
+# --- 1. 環境変数と設定 ---
+# LINEの設定
 conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 
-# Geminiクライアント
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+# Geminiの設定（最も安定した書き方に統一）
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-flash')
 
+# --- 2. Webhook受付部分 ---
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
@@ -26,30 +29,18 @@ def callback():
         abort(400)
     return 'OK'
 
+# --- 3. メッセージ処理部分 ---
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     msg = event.message.text
     tk = event.reply_token
 
     try:
-    
-    import google.generativeai as genai
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+        # AIで献立を生成
+        response = model.generate_content(f"食材「{msg}」の献立とURLを1つ教えて")
+        ai_text = response.text
 
-        
-        # あらゆる角度からテキストを絞り出す書き方
-        try:
-            ai_text = response.text
-        except:
-            # textで取れない場合、構造を分解して直接取りに行く
-            ai_text = response.candidates[0].content.parts[0].text
-        
-        # それでも空なら警告を出す
-        if not ai_text:
-            raise ValueError("Geminiからの返答が空でした")
-
-
+        # LINEへ返信
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
             line_api.reply_message(
@@ -59,18 +50,17 @@ model = genai.GenerativeModel('gemini-1.5-flash')
                 )
             )
             
-    except Exception:
-        # ログにエラーの全容を強制的に表示させる
-        print("--- !!! ERROR START !!! ---")
+    except Exception as e:
+        # エラー時はログに詳細を出しつつ、ユーザーに通知
+        print("--- ERROR DETAILS ---")
         print(traceback.format_exc())
-        print("--- !!! ERROR END !!! ---")
         
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
             line_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=tk,
-                    messages=[TextMessage(text="システム内でエラーが起きました。ログを確認してください。")]
+                    messages=[TextMessage(text="ただいま混み合っています。少し時間を置いて食材名だけ送ってみてください。")]
                 )
             )
 
