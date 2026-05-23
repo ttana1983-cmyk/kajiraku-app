@@ -32,11 +32,10 @@ def handle_message(event):
     tk = event.reply_token
 
     try:
-        # AIの処理
-        response = client.models.generate_content(
-            model="models/gemini-1.5-flash",  # ここに models/ を追加
-            contents=f"食材「{msg}」の献立とURLを1つ教えて"
-        )
+    
+    import google.generativeai as genai
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-flash')
 
         
         # あらゆる角度からテキストを絞り出す書き方
