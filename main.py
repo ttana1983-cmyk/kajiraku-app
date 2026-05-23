@@ -51,10 +51,17 @@ def handle_message(event):
                 start_registration(user_id, tk)
         except:
             start_registration(user_id, tk)
-    elif msg == "設定変更":
-        start_registration(user_id, tk)
-    elif user_id in user_temp_data and "pending_dislike" in user_temp_data[user_id]:
+    
+    # 登録フロー：アレルギー入力待ち
+    elif user_id in user_temp_data and user_temp_data[user_id].get("step") == "waiting_allergy":
+        user_temp_data[user_id]["allergy"] = msg
+        user_temp_data[user_id]["step"] = "waiting_dislike"
+        send_reply(tk, "ありがとうございます。次に【苦手なもの（アレルギー以外）】を教えてください。\n（なければ「なし」でOK！）")
+        
+    # 登録フロー：苦手なもの入力待ち（ここで登録完了）
+    elif user_id in user_temp_data and user_temp_data[user_id].get("step") == "waiting_dislike":
         register_new_user(event, msg)
+        
     else:
         try:
             sheet = get_sheet()
@@ -98,8 +105,8 @@ def handle_postback(event):
             counts = user_temp_data[user_id]["counts"]
             summary = f"男性{counts['男性']}人、女性{counts['女性']}人、子{counts['お子様']}人、年配{counts['ご年配']}人"
             user_temp_data[user_id]["family_summary"] = summary
-            user_temp_data[user_id]["pending_dislike"] = True
-            send_reply(tk, f"構成：{summary}\n\n次に【アレルギーや苦手なもの】を教えてください。")
+            user_temp_data[user_id]["step"] = "waiting_allergy"
+            send_reply(tk, f"構成：{summary}\n\n次に【アレルギーがある食材】を教えてください。\n（なければ「なし」でOK！）")
         else:
             show_member_selector(tk, next_type)
 
@@ -111,10 +118,7 @@ def handle_postback(event):
         show_genre_selection(tk, meal_type)
     elif params.get('genre'):
         user_temp_data[f"{user_id}_genre"] = params.get('genre')
-        quick_reply = QuickReply(items=[QuickReplyItem(action=PostbackAction(label="ジャンルを選び直す", data="meal_retry_step=1"))])
-        send_reply(tk, f"{params.get('genre')}ですね！食材を教えてください🍳", quick_reply)
-    elif params.get('meal_retry_step'):
-        show_genre_selection(tk, user_temp_data.get(f"{user_id}_meal", "夜ごはん"))
+        send_reply(tk, f"{params.get('genre')}ですね！食材を教えてください🍳")
     elif params.get('step') == "retry":
         try:
             sheet = get_sheet()
@@ -144,24 +148,31 @@ def show_genre_selection(tk, meal_type):
 def register_new_user(event, dislike_msg):
     user_id = event.source.user_id
     summary = user_temp_data[user_id]["family_summary"]
+    allergy = user_temp_data[user_id]["allergy"]
     user_temp_data.pop(user_id)
     try:
         sheet = get_sheet()
         cell = sheet.find(user_id)
         if cell:
-            sheet.update_cell(cell.row, 3, summary); sheet.update_cell(cell.row, 4, dislike_msg)
+            # A:ID, B:名前, C:構成, D:アレルギー, E:苦手, F:ランク, G:日付
+            sheet.update_cell(cell.row, 3, summary)
+            sheet.update_cell(cell.row, 4, allergy)
+            sheet.update_cell(cell.row, 5, dislike_msg)
         else:
-            sheet.append_row([user_id, "ユーザー", summary, dislike_msg, "Free", datetime.date.today().strftime("%Y/%m/%d")])
+            sheet.append_row([user_id, "ユーザー", summary, allergy, dislike_msg, "Free", datetime.date.today().strftime("%Y/%m/%d")])
         show_meal_selection(event.reply_token)
-    except:
-        send_reply(event.reply_token, "登録エラーです。")
+    except Exception as e:
+        print(f"Register Error: {e}")
+        send_reply(event.reply_token, "登録エラーです。設定を確認してください。")
 
 def handle_ai_generation(event, sheet, row_idx, is_retry=False):
     tk = event.reply_token
     user_id = event.source.user_id
     row_data = sheet.row_values(row_idx)
     family = row_data[2] if len(row_data) > 2 else "不明"
-    dislike = row_data[3] if len(row_data) > 3 else "なし"
+    allergy = row_data[3] if len(row_data) > 3 else "なし"
+    dislike = row_data[4] if len(row_data) > 4 else "なし"
+    
     food_msg = user_temp_data.get(f"{user_id}_last_food", "あるもの")
     meal_type = user_temp_data.get(f"{user_id}_meal", "夜ごはん")
     genre = user_temp_data.get(f"{user_id}_genre", "お任せ")
@@ -170,23 +181,15 @@ def handle_ai_generation(event, sheet, row_idx, is_retry=False):
 
     try:
         prompt = f"""
-        あなたは家族の健康を守る料理研究家です。以下の条件で献立を提案してください。
+        料理研究家として提案してください。
         構成: {family} / 時間: {meal_type} / ジャンル: {genre} / 食材: {food_msg}
-        アレルギー・苦手: {dislike}
-        {'※前回とは別の料理で。' if is_retry else ''}
-
-        【必須項目】
-        1. メイン献立名と簡単な手順
-        2. 実在する大手レシピサイト(クックパッド等)のURLを1つ
-        3. 時短テクニック
+        ★アレルギー(厳禁): {allergy}
+        ★苦手なもの: {dislike}
         
-        【店長こだわり配慮（超重要）】
-        - アレルギー食材(特に牛乳、卵、小麦等)が使えない場合：
-          必ず「牛乳を豆乳に」「小麦粉を米粉に」といった、料理研究家ならではの具体的な【代用食材とそのコツ】を分かりやすく提案してください。
-        - お子様がいる場合：
-          同じ食材で野菜が苦手な子も食べられる工夫（刻む、味付けを変える等）を添えてください。
-        - 年配の方がいる場合：
-          喉越しの良さや柔らかく仕上げる工夫を添えてください。
+        【重要指示】
+        1. 【アレルギー食材】は絶対に使用しないでください。代用が必要な場合（牛乳→豆乳など）は、具体的な代用案とコツを必ず提案してください。
+        2. 【苦手なもの】は、可能であれば避けるか、細かく刻む、味付けを工夫するなど、克服できる調理法を提案してください。
+        3. 実在URL、時短テク、お子様/ご年配への配慮も忘れずに。
         """
         response = model.generate_content(prompt)
         quick_reply = QuickReply(items=[
