@@ -42,10 +42,22 @@ def handle_message(event):
     tk = event.reply_token
     user_id = event.source.user_id
 
-    if msg in ["メニュー", "スタート", "設定変更"]:
+    if msg in ["メニュー", "スタート"]:
+        try:
+            sheet = get_sheet()
+            if sheet.find(user_id):
+                show_meal_selection(tk)
+            else:
+                show_family_selection(tk)
+        except:
+            show_family_selection(tk)
+
+    elif msg == "設定変更":
         show_family_selection(tk)
-    elif user_id in user_temp_data:
+
+    elif user_id in user_temp_data and "family" in user_temp_data[user_id]:
         register_new_user(event, msg)
+        
     else:
         try:
             sheet = get_sheet()
@@ -53,10 +65,9 @@ def handle_message(event):
             if not cell:
                 send_reply(tk, "まずは「メニュー」と送って登録してくださいね！")
             else:
-                # 直前の食材を一時保存（再提案用）
                 user_temp_data[f"{user_id}_last_food"] = msg
-                handle_ai_generation(event, sheet, cell.row, "指定なし", msg)
-        except Exception as e:
+                handle_ai_generation(event, sheet, cell.row)
+        except:
             send_reply(tk, "エラーが発生しました。設定を確認してください。")
 
 def show_family_selection(tk):
@@ -68,6 +79,24 @@ def show_family_selection(tk):
     ])
     send_reply(tk, "何人分のごはんを作ることが多いですか？👪", quick_reply)
 
+def show_meal_selection(tk):
+    quick_reply = QuickReply(items=[
+        QuickReplyItem(action=PostbackAction(label="朝ごはん ☀️", data="meal=morning")),
+        QuickReplyItem(action=PostbackAction(label="昼ごはん 🕛", data="meal=lunch")),
+        QuickReplyItem(action=PostbackAction(label="夜ごはん 🌙", data="meal=dinner"))
+    ])
+    send_reply(tk, "今日のごはんは何にしましょうか？✨", quick_reply)
+
+def show_genre_selection(tk, meal_type):
+    quick_reply = QuickReply(items=[
+        QuickReplyItem(action=PostbackAction(label="和風 🍱", data="genre=和風")),
+        QuickReplyItem(action=PostbackAction(label="洋風 🍝", data="genre=洋風")),
+        QuickReplyItem(action=PostbackAction(label="中華・韓国 🥟", data="genre=中華")),
+        QuickReplyItem(action=PostbackAction(label="お任せ 🤝", data="genre=お任せ")),
+        QuickReplyItem(action=PostbackAction(label="←戻る", data="step=reset_meal"))
+    ])
+    send_reply(tk, f"{meal_type}ですね！どんなジャンルが気分ですか？", quick_reply)
+
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
@@ -76,28 +105,39 @@ def handle_postback(event):
     params = dict(item.split('=') for item in data.split('&'))
     
     if params.get('step') == "dislike":
-        user_temp_data[user_id] = params.get('family')
+        user_temp_data[user_id] = {"family": params.get('family')}
         send_reply(tk, f"{params.get('family')}分ですね！\n次に【苦手なものやアレルギー】を教えてください。")
     
+    elif params.get('step') == "reset_meal":
+        show_meal_selection(tk)
+
     elif params.get('meal'):
         meal_type = {"morning": "朝ごはん", "lunch": "昼ごはん", "dinner": "夜ごはん"}.get(params.get('meal'))
         user_temp_data[f"{user_id}_meal"] = meal_type
-        send_reply(tk, f"{meal_type}ですね！承知いたしました。\n\n今、使いたい食材（鶏肉、大根など）を教えてください🍳")
+        show_genre_selection(tk, meal_type)
 
-    # 「別のレシピ」ボタンが押された時
+    elif params.get('genre'):
+        user_temp_data[f"{user_id}_genre"] = params.get('genre')
+        quick_reply = QuickReply(items=[
+            QuickReplyItem(action=PostbackAction(label="ジャンルを選び直す", data=f"meal_retry_step={user_temp_data.get(f'{user_id}_meal')}"))
+        ])
+        send_reply(tk, f"{params.get('genre')}の気分ですね！\n\n使いたい食材（鶏肉、卵など）を教えてください🍳", quick_reply)
+
+    elif params.get('meal_retry_step'):
+        show_genre_selection(tk, user_temp_data.get(f"{user_id}_meal"))
+
     elif params.get('step') == "retry":
         try:
             sheet = get_sheet()
             cell = sheet.find(user_id)
-            last_food = user_temp_data.get(f"{user_id}_last_food", "あるもの")
-            meal_type = user_temp_data.get(f"{user_id}_meal", "指定なし")
-            handle_ai_generation(event, sheet, cell.row, meal_type, last_food, is_retry=True)
+            handle_ai_generation(event, sheet, cell.row, is_retry=True)
         except:
-            send_reply(tk, "すみません、もう一度食材を教えていただけますか？")
+            send_reply(tk, "食材を教えてください！")
 
 def register_new_user(event, dislike_msg):
     user_id = event.source.user_id
-    family = user_temp_data.pop(user_id, "不明")
+    family = user_temp_data[user_id]["family"]
+    user_temp_data.pop(user_id)
     try:
         sheet = get_sheet()
         cell = sheet.find(user_id)
@@ -105,51 +145,37 @@ def register_new_user(event, dislike_msg):
             sheet.update_cell(cell.row, 3, family); sheet.update_cell(cell.row, 4, dislike_msg)
         else:
             sheet.append_row([user_id, "ユーザー", family, dislike_msg, "Free", datetime.date.today().strftime("%Y/%m/%d")])
-        
-        quick_reply = QuickReply(items=[
-            QuickReplyItem(action=PostbackAction(label="朝ごはん ☀️", data="meal=morning")),
-            QuickReplyItem(action=PostbackAction(label="昼ごはん 🕛", data="meal=lunch")),
-            QuickReplyItem(action=PostbackAction(label="夜ごはん 🌙", data="meal=dinner"))
-        ])
-        send_reply(event.reply_token, f"登録完了！{family}分の献立はお任せください。\n\nさて、今日のごはんは何にしましょうか？", quick_reply)
+        show_meal_selection(event.reply_token)
     except:
         send_reply(event.reply_token, "登録エラーです。")
 
-def handle_ai_generation(event, sheet, row_idx, meal_context, food_msg, is_retry=False):
+def handle_ai_generation(event, sheet, row_idx, is_retry=False):
     tk = event.reply_token
     user_id = event.source.user_id
     row_data = sheet.row_values(row_idx)
     family = row_data[2] if len(row_data) > 2 else "不明"
     dislike = row_data[3] if len(row_data) > 3 else "なし"
+    
+    food_msg = user_temp_data.get(f"{user_id}_last_food", "あるもの")
+    meal_type = user_temp_data.get(f"{user_id}_meal", "夜ごはん")
+    genre = user_temp_data.get(f"{user_id}_genre", "お任せ")
 
-    retry_text = "別の切り口で" if is_retry else ""
-    send_reply(tk, f"{retry_text}レシピを考えています。少々お待ちを！🍳")
+    send_reply(tk, f"【{meal_type}×{genre}】のレシピを考えています。少々お待ちください🍳")
 
     try:
-        prompt = f"""
-        プロの料理研究家として、{family}向けの{meal_context}を提案してください。
-        食材: {food_msg}
-        禁止食材: {dislike}
-        {'※先ほどとは別の料理を提案してください。' if is_retry else ''}
-        
-        【条件】
-        - 実在するレシピURLを必ず1つ。
-        - 時短テクを1つ。
-        - ダジャレや遊び心は不要。真面目に冷蔵庫の食材を活かす提案をしてください。
-        """
+        prompt = f"料理研究家として提案してください。{meal_type}でジャンルは{genre}。食材「{food_msg}」を使い、{family}分で、{dislike}を避けた実在するレシピをURL付で。{'前回とは別の料理で。' if is_retry else ''}時短テクも。"
         response = model.generate_content(prompt)
         
-        # 提案の後に「別のレシピ」ボタンを出す
         quick_reply = QuickReply(items=[
-            QuickReplyItem(action=PostbackAction(label="他のレシピも見る", data="step=retry")),
-            QuickReplyItem(action=PostbackAction(label="別の食材にする", data="meal=dinner")) # 再度時間選択から
+            QuickReplyItem(action=PostbackAction(label="別のレシピを見る", data="step=retry")),
+            QuickReplyItem(action=PostbackAction(label="ジャンルを選び直す", data="meal_retry_step=1")),
+            QuickReplyItem(action=PostbackAction(label="最初からやり直す", data="step=reset_meal"))
         ])
         
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
             line_api.push_message(PushMessageRequest(
-                to=user_id, 
-                messages=[TextMessage(text=response.text, quick_reply=quick_reply)]
+                to=user_id, messages=[TextMessage(text=response.text, quick_reply=quick_reply)]
             ))
     except Exception as e:
         print(f"AI Error: {e}")
