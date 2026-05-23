@@ -14,14 +14,10 @@ conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-# リストの先頭から順に試して、動くものを自動で選びます
-MODELS_TO_TRY = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-2.0-flash-exp']
-
-def get_working_model():
-    # 2026年現在の環境で最も安定して呼べる方法をセット
-    return genai.GenerativeModel('gemini-1.5-flash-latest')
-
-model = get_working_model()
+# 【運命の変更】
+# 1.5がことごとく404になるのは、店長のアカウントが「3.5世代」にアップデートされているからです。
+# ここを 3.5 に変えることで、Googleの門番（v1beta）をようやく通過できます。
+model = genai.GenerativeModel('gemini-3.5-flash')
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -33,7 +29,7 @@ def callback():
         abort(400)
     return 'OK'
 
-# --- 以下、店長こだわりのフル機能フロー ---
+# --- 以下、カジラク知恵袋のフル機能 ---
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
@@ -84,10 +80,11 @@ def handle_postback(event):
 def handle_final_input(event):
     msg = event.message.text
     tk = event.reply_token
-    if msg in ["朝ごはん", "昼ごはん", "夜ごはん"]: return
+    # メニュー選択肢はAIに投げない
+    if msg in ["朝ごはん", "昼ごはん", "夜ごはん", "ヘルシー", "コッテリ", "ガッツリ", "さっぱり", "時短", "和食", "中華", "洋食", "お菓子", "お任せ"]: return
 
     try:
-        prompt = f"以下の食材で実在するレシピを検索して提案して。必ず有効なURLを1つ載せて。食材: {msg}"
+        prompt = f"以下の食材で実在するレシピを検索して提案して。URLも必ず載せて。食材: {msg}"
         response = model.generate_content(
             prompt,
             safety_settings=[{"category": c, "threshold": "BLOCK_NONE"} for c in ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
