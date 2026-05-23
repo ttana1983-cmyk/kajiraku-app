@@ -32,11 +32,12 @@ def handle_message(event):
     tk = event.reply_token
 
     try:
-               # AIの処理
+        # AIの処理
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="models/gemini-1.5-flash",  # ここに models/ を追加
             contents=f"食材「{msg}」の献立とURLを1つ教えて"
         )
+
         
         # あらゆる角度からテキストを絞り出す書き方
         try:
