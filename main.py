@@ -5,19 +5,31 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage, QuickReply, QuickReplyItem, PostbackAction, PushMessageRequest
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, PostbackEvent
 import google.generativeai as genai
 
 app = Flask(__name__)
 
-# --- 設定 ---
+# --- 1. LINEからの信号を受け取る窓口（ここが抜けていました！） ---
+@app.route("/callback", methods=['POST'])
+def callback():
+    signature = request.headers.get('X-Line-Signature', '')
+    body = request.get_data(as_text=True)
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+    return 'OK'
+
+# --- 2. 設定 ---
 conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-3.5-flash')
 
-# Google Sheets 連携
+# Google Sheets 連携用関数
 def get_sheet():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
@@ -25,65 +37,72 @@ def get_sheet():
     client = gspread.authorize(creds)
     return client.open_by_key(os.environ["SPREADSHEET_ID"]).sheet1
 
-# --- 1. メッセージ受付 ---
+# --- 3. メッセージ受付（「メニュー」や「設定変更」への反応） ---
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     msg = event.message.text
     tk = event.reply_token
     user_id = event.source.user_id
 
+    # 家族構成やアレルギーの「登録処理」か「献立相談」かを判別
     if msg in ["メニュー", "スタート", "設定変更"]:
         show_family_selection(tk)
     else:
-        # 食材入力。まずシートにユーザーがいるか確認
         try:
             sheet = get_sheet()
             cell = sheet.find(user_id)
+            
+            # まだ名簿にいない場合は、まず登録を促す
             if not cell:
-                # 未登録なら登録へ誘導
                 send_reply(tk, "まずは「メニュー」と送って、家族構成などを教えてくださいね！")
             else:
-                # 登録済みならレシピ生成へ
+                # 登録済みの場合は、食材として受け取ってレシピを生成
                 handle_ai_generation(event, sheet, cell.row)
         except Exception as e:
-            send_reply(tk, "ごめんなさい、ちょっと調子が悪いみたいです。後でもう一度試してみてね！")
+            print(f"Error in message handler: {e}")
+            send_reply(tk, "すみません、少し通信が不安定みたいです。時間を置いて試してみてね！")
 
-# 家族構成選択
+# 家族構成の選択ボタンを表示
 def show_family_selection(tk):
     quick_reply = QuickReply(items=[
-        QuickReplyItem(action=PostbackAction(label="1人暮らし", data="step=dislike&family=1人")),
-        QuickReplyItem(action=PostbackAction(label="2人", data="step=dislike&family=2人")),
-        QuickReplyItem(action=PostbackAction(label="3人", data="step=dislike&family=3人")),
-        QuickReplyItem(action=PostbackAction(label="4人以上", data="step=dislike&family=4人以上"))
+        QuickReplyItem(action=PostbackAction(label="1人暮らし", data="step=dislike&family=1人", display_text="1人暮らし")),
+        QuickReplyItem(action=PostbackAction(label="2人", data="step=dislike&family=2人", display_text="2人")),
+        QuickReplyItem(action=PostbackAction(label="3人", data="step=dislike&family=3人", display_text="3人")),
+        QuickReplyItem(action=PostbackAction(label="4人以上", data="step=dislike&family=4人以上", display_text="4人以上"))
     ])
-    send_reply(tk, "何人分のごはんを作ることが多いですか？👪", quick_reply)
+    send_reply(tk, "まずは何人分のごはんを作ることが多いですか？👪", quick_reply)
 
-# --- 2. 顧客情報の保存（アレルギー入力） ---
+# --- 4. ボタン操作（顧客情報の保存と更新） ---
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
     tk = event.reply_token
+    user_id = event.source.user_id
     params = dict(item.split('=') for item in data.split('&'))
     
     if params.get('step') == "dislike":
-        # 簡易的に、次に「アレルギー：卵」のように打ってもらう形にします
-        # ※本来は入力待ち状態を作りますが、今回は流れを優先
-        send_reply(tk, f"{params.get('family')}分ですね！\n\n最後に【苦手なもの・アレルギー】を教えてください。\n例：「なし」「卵とピーマン」など\n\n※この入力が終わると、次から食材を送るだけでOKになります！")
+        # 家族構成を保存（ここではまだ書き込まず、次にアレルギーを聞く）
+        # ※本来はDBに保持しますが、簡易的に「メッセージを打って」と誘導
+        send_reply(tk, f"{params.get('family')}分ですね！\n\n最後に【苦手な食材・アレルギー】を教えてください。\n（例：ピーマン、卵アレルギー、特になし）\n\nここに入力すると登録が完了します！")
 
-# --- 3. AI生成（シートの情報をプロンプトに注入） ---
+# --- 5. AI生成（シートの名簿情報をプロンプトに注入） ---
 def handle_ai_generation(event, sheet, row_idx):
     user_id = event.source.user_id
     msg = event.message.text
     tk = event.reply_token
 
-    # シートから情報を取得 (A:ID, B:名前, C:家族, D:苦手, E:ランク)
-    row_data = sheet.row_values(row_idx)
-    family = row_data[2] if len(row_data) > 2 else "不明"
-    dislike = row_data[3] if len(row_data) > 3 else "特になし"
-
-    send_reply(tk, "情報を確認しました！ピッタリのレシピを考えてくるので、少しお待ちください。🍳")
-
+    # スプレッドシートからその人の情報を読み出す
     try:
+        row_data = sheet.row_values(row_idx)
+        # シート構成: A:ID, B:名前, C:家族, D:苦手, E:ランク, F:日付
+        user_name = row_data[1] if len(row_data) > 1 else "ユーザー"
+        family = row_data[2] if len(row_data) > 2 else "不明"
+        dislike = row_data[3] if len(row_data) > 3 else "特になし"
+
+        # 即レスでお待たせさせない
+        send_reply(tk, "ありがとうございます！条件に合わせたレシピを考えてくるので、少しお待ちくださいね。🍳")
+
+        # AIへの命令
         prompt = f"""
         あなたはプロの料理研究家です。以下の顧客データを踏まえて回答してください。
         
@@ -95,27 +114,34 @@ def handle_ai_generation(event, sheet, row_idx):
         食材: {msg}
         
         【指示】
-        - {family}に適した分量で。
+        - {family}に適した分量で提案。
         - {dislike}は絶対に使用しない。
-        - 実在するレシピURLを必ず1つ。
-        - 家事を楽にするコツを1つ。
+        - 実在するレシピURLを必ず1つ載せる。
+        - 家事の時短テクニックを1つ添える。
         """
+        
         response = model.generate_content(prompt)
         
+        # 回答をプッシュメッセージで送信
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
             line_api.push_message(PushMessageRequest(
-                to=user_id, messages=[TextMessage(text=response.text)]
+                to=user_id,
+                messages=[TextMessage(text=response.text)]
             ))
+            
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error in AI generation: {e}")
 
+# 共通返信関数
 def send_reply(tk, text, quick_reply=None):
     with ApiClient(conf) as api_client:
         line_api = MessagingApi(api_client)
         line_api.reply_message(ReplyMessageRequest(
-            reply_token=tk, messages=[TextMessage(text=text, quick_reply=quick_reply)]
+            reply_token=tk,
+            messages=[TextMessage(text=text, quick_reply=quick_reply)]
         ))
 
 if __name__ == "__main__":
+    # Renderのポート設定に合わせて起動
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
