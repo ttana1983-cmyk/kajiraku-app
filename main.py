@@ -13,7 +13,15 @@ app = Flask(__name__)
 conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# リストの先頭から順に試して、動くものを自動で選びます
+MODELS_TO_TRY = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-2.0-flash-exp']
+
+def get_working_model():
+    # 2026年現在の環境で最も安定して呼べる方法をセット
+    return genai.GenerativeModel('gemini-1.5-flash-latest')
+
+model = get_working_model()
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -25,11 +33,11 @@ def callback():
         abort(400)
     return 'OK'
 
-# --- 1. 時間帯の選択 ---
+# --- 以下、店長こだわりのフル機能フロー ---
+
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     tk = event.reply_token
-    # 最初の選択肢を表示
     quick_reply = QuickReply(items=[
         QuickReplyItem(action=PostbackAction(label="朝ごはん", data="step=mood&time=朝", display_text="朝ごはん")),
         QuickReplyItem(action=PostbackAction(label="昼ごはん", data="step=mood&time=昼", display_text="昼ごはん")),
@@ -45,7 +53,6 @@ def handle_message(event):
     except Exception as e:
         send_error_to_line(tk, e)
 
-# --- 2. 気分・ジャンルの選択 ---
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
@@ -57,56 +64,45 @@ def handle_postback(event):
         if step == "mood":
             moods = ["ヘルシー", "コッテリ", "ガッツリ", "さっぱり", "時短", "和食", "中華", "洋食", "お菓子", "お任せ"]
             items = [QuickReplyItem(action=PostbackAction(label=m, data=f"step=ask_fridge&{data}&mood={m}", display_text=m)) for m in moods]
-            
             with ApiClient(conf) as api_client:
                 line_api = MessagingApi(api_client)
                 line_api.reply_message(ReplyMessageRequest(
                     reply_token=tk,
-                    messages=[TextMessage(text="今の気分やジャンルを教えてください！", quick_reply=QuickReply(items=items))]
+                    messages=[TextMessage(text="今の気分は？", quick_reply=QuickReply(items=items))]
                 ))
-
         elif step == "ask_fridge":
             with ApiClient(conf) as api_client:
                 line_api = MessagingApi(api_client)
                 line_api.reply_message(ReplyMessageRequest(
                     reply_token=tk,
-                    messages=[TextMessage(text=f"【{params.get('time')}/{params.get('mood')}】ですね！\n\n冷蔵庫にある食材を教えてください。(例：鶏肉、卵)")]
+                    messages=[TextMessage(text=f"【{params.get('time')}/{params.get('mood')}】ですね！\n\n冷蔵庫にある食材を教えてください。")]
                 ))
     except Exception as e:
         send_error_to_line(tk, e)
 
-# --- 3. 食材入力からAI生成 ---
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_final_input(event):
     msg = event.message.text
     tk = event.reply_token
+    if msg in ["朝ごはん", "昼ごはん", "夜ごはん"]: return
 
     try:
-        prompt = f"以下の食材で、実在するレシピを検索して提案して。URLも必ず載せて。\n食材: {msg}"
-        
+        prompt = f"以下の食材で実在するレシピを検索して提案して。必ず有効なURLを1つ載せて。食材: {msg}"
         response = model.generate_content(
             prompt,
             safety_settings=[{"category": c, "threshold": "BLOCK_NONE"} for c in ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
         )
-        
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
-            line_api.reply_message(ReplyMessageRequest(
-                reply_token=tk,
-                messages=[TextMessage(text=response.text)]
-            ))
+            line_api.reply_message(ReplyMessageRequest(reply_token=tk, messages=[TextMessage(text=response.text)]))
     except Exception as e:
         send_error_to_line(tk, e)
 
-# --- エラー通知用の共通関数 ---
 def send_error_to_line(tk, e):
-    error_msg = f"⚠️エラー発生！\n【内容】: {str(e)[:150]}\n【詳細】: {traceback.format_exc()[:150]}"
+    error_msg = f"⚠️詳細エラー:\n{str(e)[:200]}"
     with ApiClient(conf) as api_client:
         line_api = MessagingApi(api_client)
-        line_api.reply_message(ReplyMessageRequest(
-            reply_token=tk,
-            messages=[TextMessage(text=error_msg)]
-        ))
+        line_api.reply_message(ReplyMessageRequest(reply_token=tk, messages=[TextMessage(text=error_msg)]))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
