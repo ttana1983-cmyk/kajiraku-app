@@ -13,10 +13,6 @@ app = Flask(__name__)
 conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-
-# 【運命の変更】
-# 1.5がことごとく404になるのは、店長のアカウントが「3.5世代」にアップデートされているからです。
-# ここを 3.5 に変えることで、Googleの門番（v1beta）をようやく通過できます。
 model = genai.GenerativeModel('gemini-3.5-flash')
 
 @app.route("/callback", methods=['POST'])
@@ -29,26 +25,33 @@ def callback():
         abort(400)
     return 'OK'
 
-# --- 以下、カジラク知恵袋のフル機能 ---
-
+# --- 1. メッセージ受付（「メニュー」や「最初から」への対応） ---
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    msg = event.message.text
     tk = event.reply_token
+
+    # 【重要】もし「メニュー」や最初の挨拶、あるいは特定のキーワードが来たらボタンを出す
+    if msg in ["メニュー", "最初から", "スタート", "献立"]:
+        show_time_selection(tk)
+    else:
+        # それ以外は「冷蔵庫の食材」としてAIに投げる
+        handle_ai_generation(tk, msg)
+
+def show_time_selection(tk):
     quick_reply = QuickReply(items=[
         QuickReplyItem(action=PostbackAction(label="朝ごはん", data="step=mood&time=朝", display_text="朝ごはん")),
         QuickReplyItem(action=PostbackAction(label="昼ごはん", data="step=mood&time=昼", display_text="昼ごはん")),
         QuickReplyItem(action=PostbackAction(label="夜ごはん", data="step=mood&time=夜", display_text="夜ごはん"))
     ])
-    try:
-        with ApiClient(conf) as api_client:
-            line_api = MessagingApi(api_client)
-            line_api.reply_message(ReplyMessageRequest(
-                reply_token=tk,
-                messages=[TextMessage(text="いつのごはんにしますか？", quick_reply=quick_reply)]
-            ))
-    except Exception as e:
-        send_error_to_line(tk, e)
+    with ApiClient(conf) as api_client:
+        line_api = MessagingApi(api_client)
+        line_api.reply_message(ReplyMessageRequest(
+            reply_token=tk,
+            messages=[TextMessage(text="いつのごはんにしますか？", quick_reply=quick_reply)]
+        ))
 
+# --- 2. ボタン操作（気分・冷蔵庫確認） ---
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
@@ -76,15 +79,10 @@ def handle_postback(event):
     except Exception as e:
         send_error_to_line(tk, e)
 
-@handler.add(MessageEvent, message=TextMessageContent)
-def handle_final_input(event):
-    msg = event.message.text
-    tk = event.reply_token
-    # メニュー選択肢はAIに投げない
-    if msg in ["朝ごはん", "昼ごはん", "夜ごはん", "ヘルシー", "コッテリ", "ガッツリ", "さっぱり", "時短", "和食", "中華", "洋食", "お菓子", "お任せ"]: return
-
+# --- 3. AI生成ロジック ---
+def handle_ai_generation(tk, msg):
     try:
-        prompt = f"以下の食材で実在するレシピを検索して提案して。URLも必ず載せて。食材: {msg}"
+        prompt = f"以下の食材で、実在するレシピを検索して提案して。URLも必ず1つ載せて。食材: {msg}"
         response = model.generate_content(
             prompt,
             safety_settings=[{"category": c, "threshold": "BLOCK_NONE"} for c in ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
