@@ -1,3 +1,5 @@
-google-generativeai
-line-bot-sdk
 flask
+line-bot-sdk
+google-generativeai
+gspread
+oauth2client
