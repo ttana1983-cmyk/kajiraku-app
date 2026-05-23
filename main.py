@@ -86,9 +86,8 @@ def show_member_selector(tk, member_type, is_edit=False):
         QuickReplyItem(action=PostbackAction(label="2人", data=f"type={member_type}&num=2")),
         QuickReplyItem(action=PostbackAction(label="3人以上", data=f"type={member_type}&num=3"))
     ]
-    # 設定変更の時だけ「中断ボタン」を追加
     if is_edit:
-        items.append(QuickReplyItem(action=PostbackAction(label="変更をやめる ✖", data="step=reset_meal")))
+        items.append(QuickReplyItem(action=PostbackAction(label="中止 ✖", data="step=reset_meal")))
     
     quick_reply = QuickReply(items=items)
     send_reply(tk, f"【{member_type}】は何人いますか？", quick_reply)
@@ -113,16 +112,16 @@ def handle_postback(event):
             user_temp_data[user_id]["family_summary"] = summary
             user_temp_data[user_id]["step"] = "waiting_allergy"
             
-            # アレルギー入力時にも中断ボタン
-            items = [QuickReplyItem(action=PostbackAction(label="変更をやめる ✖", data="step=reset_meal"))] if user_temp_data[user_id].get("is_edit") else None
-            send_reply(tk, f"新しい構成：{summary}\n\n次に【アレルギー食材】を教えてください。", QuickReply(items=items) if items else None)
+            items = [QuickReplyItem(action=PostbackAction(label="中止 ✖", data="step=reset_meal"))] if user_temp_data[user_id].get("is_edit") else None
+            send_reply(tk, f"構成：{summary}\n次に【アレルギー食材】を教えてください。", QuickReply(items=items) if items else None)
         else:
             show_member_selector(tk, next_type, user_temp_data[user_id].get("is_edit"))
 
     elif params.get('step') == "reset_meal":
-        # 中断されたら一時データを消して、通常の食事選択へ
         user_temp_data.pop(user_id, None)
         show_meal_selection(tk)
+    elif params.get('step') == "edit_force":
+        start_registration(user_id, tk, is_edit=True)
     elif params.get('meal'):
         meal_type = {"morning": "朝ごはん", "lunch": "昼ごはん", "dinner": "夜ごはん"}.get(params.get('meal'))
         user_temp_data[f"{user_id}_meal"] = meal_type
@@ -139,10 +138,12 @@ def handle_postback(event):
             send_reply(tk, "食材を教えてください！")
 
 def show_meal_selection(tk):
+    # 最初の入り口に「設定変更」を配置！
     quick_reply = QuickReply(items=[
         QuickReplyItem(action=PostbackAction(label="朝ごはん ☀️", data="meal=morning")),
         QuickReplyItem(action=PostbackAction(label="昼ごはん 🕛", data="meal=lunch")),
-        QuickReplyItem(action=PostbackAction(label="夜ごはん 🌙", data="meal=dinner"))
+        QuickReplyItem(action=PostbackAction(label="夜ごはん 🌙", data="meal=dinner")),
+        QuickReplyItem(action=PostbackAction(label="登録内容の変更 ⚙️", data="step=edit_force"))
     ])
     send_reply(tk, "今日のごはんは何にしましょうか？✨", quick_reply)
 
@@ -165,9 +166,7 @@ def register_new_user(event, dislike_msg):
         sheet = get_sheet()
         cell = sheet.find(user_id)
         if cell:
-            sheet.update_cell(cell.row, 3, summary)
-            sheet.update_cell(cell.row, 4, allergy)
-            sheet.update_cell(cell.row, 5, dislike_msg)
+            sheet.update_cell(cell.row, 3, summary); sheet.update_cell(cell.row, 4, allergy); sheet.update_cell(cell.row, 5, dislike_msg)
             msg = "設定を更新しました！"
         else:
             sheet.append_row([user_id, "ユーザー", summary, allergy, dislike_msg, "Free", datetime.date.today().strftime("%Y/%m/%d")])
@@ -191,9 +190,12 @@ def handle_ai_generation(event, sheet, row_idx, is_retry=False):
     try:
         prompt = f"料理研究家として提案。{family}向けの{meal_type}({genre})。食材:{food_msg}。アレルギー(厳禁):{allergy}。苦手:{dislike}。工夫とURL、時短テクを。"
         response = model.generate_content(prompt)
+        
+        # 最後にも念のため配置
         quick_reply = QuickReply(items=[
             QuickReplyItem(action=PostbackAction(label="別のレシピ", data="step=retry")),
-            QuickReplyItem(action=PostbackAction(label="最初から", data="step=reset_meal"))
+            QuickReplyItem(action=PostbackAction(label="最初から", data="step=reset_meal")),
+            QuickReplyItem(action=PostbackAction(label="登録内容変更 ⚙️", data="step=edit_force"))
         ])
         with ApiClient(conf) as api_client:
             line_api = MessagingApi(api_client)
