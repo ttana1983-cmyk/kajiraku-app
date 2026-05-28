@@ -17,7 +17,7 @@ user_temp_data = {}
 conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-3.5-flash')
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 def get_sheet():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -171,7 +171,15 @@ def register_new_user(event, other_msg):
             sheet.update_cell(cell.row, 3, summary); sheet.update_cell(cell.row, 4, ng_list)
         except gspread.exceptions.CellNotFound:
             sheet.append_row([u_id, "ユーザー", summary, ng_list, "", "Free", datetime.date.today().strftime("%Y/%m/%d")])
-        send_reply(event.reply_token, "家族設定を保存しました。"); show_meal_selection(event.reply_token)
+        
+        finish_msg = (
+            f"設定を保存いたしました。ありがとうございます。\n\n"
+            f"【ご家族の構成】\n{summary}\n"
+            f"【苦手なもの・こだわり】\n{ng_list}\n\n"
+            f"こちらを考慮して、最適な献立を提案させていただきますね。"
+        )
+        send_reply(event.reply_token, finish_msg)
+        show_meal_selection(event.reply_token)
     except: send_reply(event.reply_token, "データの保存に失敗しました。")
 
 def handle_free_consultation(event):
@@ -196,15 +204,20 @@ def handle_ai_generation(event, sheet, row_idx, is_retry=False):
     food = user_temp_data.get(f"{u_id}_last_food", "あるもの")
     meal = user_temp_data.get(f"{u_id}_meal", "夜ごはん"); gen = user_temp_data.get(f"{u_id}_genre", "お任せ")
     
-    # 最初の返信で「考え中」を伝える
     send_reply(tk, "献立を構築しています。少々お待ちくださいませ。")
     
     try:
-        prompt = f"""あなたはプロの家事コンシェルジュです。家族構成:{fam}、時間帯:{meal}、気分:{gen}、食材:{food}、制限:{ng_all}に基づき、15分で完成する引き算レシピを1つ提案してください。
-        【指針】丁寧で安心感のある言葉遣い。冒頭で必ず衛生管理への注意を促す。URLは含めない。プレーンテキストで。"""
+        prompt = f"""あなたはプロの家事コンシェルジュです。
+        構成:{fam}、時間帯:{meal}、気分:{gen}、食材:{food}、制限:{ng_all}に基づき、15分で完成する引き算レシピを1つ提案してください。
+        【指針】
+        ・1食150円前後を意識した経済的な提案。
+        ・丁寧で安心感のある言葉遣い。
+        ・冒頭で必ず衛生管理への注意。
+        ・URLは含めない。プレーンテキストで。"""
         res = model.generate_content(prompt)
         qr = QuickReply(items=[
             QuickReplyItem(action=PostbackAction(label="🔄 別のレシピを提案", data="step=retry")),
+            QuickReplyItem(action=PostbackAction(label="⚙️ 家族設定を変更する", data="step=edit_force")),
             QuickReplyItem(action=PostbackAction(label="🏠 メニューに戻る", data="step=reset_meal"))
         ])
         with ApiClient(conf) as c:
