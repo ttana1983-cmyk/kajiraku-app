@@ -18,7 +18,7 @@ conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-# 【店長指定】モデル固定
+# モデル固定
 model = genai.GenerativeModel('gemini-3.5-flash') 
 
 def get_sheet():
@@ -28,12 +28,10 @@ def get_sheet():
     client = gspread.authorize(creds)
     return client.open_by_key(os.environ["SPREADSHEET_ID"]).sheet1
 
-# --- 1. LIFF画面（買い物シート）の表示ルート ---
+# --- 1. LIFF画面（買い物シート）表示 ---
 @app.route("/recipe")
 def recipe_page():
-    # 本来はDBから取得しますが、まずは店長のUIイメージを体験するための静的表示
     liff_id = os.environ.get("LIFF_ID", "")
-    
     html_template = f"""
     <!DOCTYPE html>
     <html lang="ja">
@@ -56,15 +54,14 @@ def recipe_page():
     <body>
         <div class="card">
             <h1>🍳 今日のレシピ</h1>
-            <p>※ここにGeminiの回答が表示されます（現在開発中）</p>
+            <p id="recipe-text">読み込み中...<br>※ここにレシピが表示されます</p>
         </div>
         <div class="card">
             <h1>🛒 お買い物チェックリスト</h1>
             <div class="item" onclick="this.classList.toggle('checked')"><input type="checkbox"> <span>メインの食材</span></div>
-            <div class="item" onclick="this.classList.toggle('checked')"><input type="checkbox"> <span>野菜など</span></div>
+            <div class="item" onclick="this.classList.toggle('checked')"><input type="checkbox"> <span>野菜・調味料</span></div>
         </div>
         <button class="btn-done" onclick="liff.closeWindow()">買い物完了！調理へ</button>
-
         <script>
             liff.init({{ liffId: "{liff_id}" }}).then(() => {{
                 if (!liff.isLoggedIn()) {{ liff.login(); }}
@@ -89,7 +86,6 @@ def callback():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     msg, tk, u_id = event.message.text, event.reply_token, event.source.user_id
-    
     if msg == "レシピのご提案":
         show_meal_selection(tk)
     elif msg == "レシピ検索":
@@ -108,11 +104,9 @@ def handle_message(event):
 def handle_free_consultation(event):
     msg, u_id, tk = event.message.text, event.reply_token, event.source.user_id
     is_search_mode = user_temp_data.get(u_id, {}).get("mode") == "search"
-    
     try:
         judge_prompt = f"判定：A(料理名) B(食材相談)。『{msg}』はどちら？Aならバリエーションを5つ、Bなら '食材' と返して。"
         res = model.generate_content(judge_prompt).text.strip()
-        
         if "食材" in res or (not is_search_mode):
             user_temp_data[f"{u_id}_last_food"] = msg
             handle_ai_generation(event, tk)
@@ -127,27 +121,20 @@ def handle_free_consultation(event):
 def handle_ai_generation(event, tk, is_retry=False):
     u_id = event.source.user_id
     liff_url = f"https://liff.line.me/{os.environ.get('LIFF_ID')}"
-    
     try:
         sheet = get_sheet(); cell = sheet.find(u_id); row = sheet.row_values(cell.row)
         fam, ng_all = row[2], row[3]
     except: fam, ng_all = "未設定", "特になし"
-    
     food = user_temp_data.get(f"{u_id}_last_food", "あるもの")
     meal = user_temp_data.get(f"{u_id}_meal", "今日")
     gen = user_temp_data.get(f"{u_id}_genre", "お任せ")
-    
     try:
         prompt = f"家事ラクコンシェルジュ。構成:{fam}/{meal}/{gen}/食材:{food}/制限:{ng_all}。15分150円レシピ。簡潔に。"
         res = model.generate_content(prompt)
-        
-        # 買い物シート（LIFF）への誘導ボタンを追加
         qr = QuickReply(items=[
             QuickReplyItem(action=PostbackAction(label="🔄 別の提案", data="step=retry")),
             QuickReplyItem(action=PostbackAction(label="🏠 戻る", data="step=reset_meal"))
         ])
-        
-        # レシピ本文にLIFFへのリンクを添える
         reply_text = f"家事ラクコンシェルジュです✨\n\n{res.text}\n\n👇お買い物リストはこちら\n{liff_url}"
         send_reply(tk, reply_text, qr)
     except:
@@ -157,7 +144,6 @@ def send_reply(tk, text, quick_reply=None):
     with ApiClient(conf) as c:
         MessagingApi(c).reply_message(ReplyMessageRequest(reply_token=tk, messages=[TextMessage(text=text, quick_reply=quick_reply)]))
 
-# --- 以下、設定フロー（省略せず維持） ---
 def start_registration(u_id, tk, is_edit=False):
     user_temp_data[u_id] = {"counts": {"男性": 0, "女性": 0, "お子様": 0, "ご年配": 0}, "child_detail": "", "ng_items": [], "is_edit": is_edit, "step": "member_select"}
     show_main_category_selector(tk)
@@ -206,7 +192,7 @@ def handle_postback(event):
         show_genre_selection(tk, user_temp_data[f"{u_id}_meal"])
     elif params.get('genre'):
         user_temp_data[f"{u_id}_genre"] = params.get('genre')
-        send_reply(tk, f"【{params.get('genre')}】ですね！使いたい食材を教えてください。入力後に少しお時間を下さいね✨")
+        send_reply(tk, f"【{params.get('genre')}】ですね！使いたい食材を教えてください。")
     elif params.get('step') == "retry":
         handle_ai_generation(event, tk, is_retry=True)
 
@@ -222,4 +208,17 @@ def register_new_user(event, other_msg):
     u_id = event.source.user_id; data = user_temp_data[u_id]; c = data["counts"]
     summary = f"男{c.get('男性',0)}女{c.get('女性',0)}子{c.get('お子様',0)}年{c.get('ご年配',0)}"
     ng_list = ",".join(data.get("ng_items",[])) + f" その他:{other_msg}"
-    user_temp_data.pop(u_id,
+    user_temp_data.pop(u_id, None)
+    try:
+        sheet = get_sheet()
+        try: cell = sheet.find(u_id); sheet.update_cell(cell.row, 3, summary); sheet.update_cell(cell.row, 4, ng_list)
+        except: sheet.append_row([u_id, "ユーザー", summary, ng_list, "", "Free", datetime.date.today().strftime("%Y/%m/%d")])
+        send_reply(event.reply_token, "設定完了！"); show_meal_selection(event.reply_token)
+    except: send_reply(event.reply_token, "保存失敗...")
+
+def show_ng_selector(tk):
+    items = [QuickReplyItem(action=PostbackAction(label="🙅 生ものNG", data="ng=生もの")), QuickReplyItem(action=PostbackAction(label="🍋 酸味NG", data="ng=酸味")), QuickReplyItem(action=PostbackAction(label="⚠️ その他", data="ng=OTHER")), QuickReplyItem(action=PostbackAction(label="✅ 完了", data="ng=DONE"))]
+    send_reply(tk, "苦手なものはありますか？", QuickReply(items=items))
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
