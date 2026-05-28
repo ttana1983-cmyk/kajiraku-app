@@ -17,7 +17,9 @@ user_temp_data = {}
 conf = Configuration(access_token=os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
 handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-pro') 
+
+# 【店長指定】最新の 3.5 Flash に固定！
+model = genai.GenerativeModel('gemini-3.5-flash') 
 
 def get_sheet():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -162,7 +164,7 @@ def register_new_user(event, other_msg):
 
 def handle_free_consultation(event):
     msg, u_id, tk = event.message.text, event.source.user_id, event.reply_token
-    # 文言修正：「構築しています」→「考えています」
+    # 「考えています」に修正
     send_reply(tk, "献立を考えています。少々お待ちくださいませ。")
     try:
         sheet = get_sheet()
@@ -175,8 +177,7 @@ def handle_free_consultation(event):
                 user_temp_data[f"{u_id}_last_food"] = msg
                 handle_ai_generation(event, sheet, cell.row)
             else:
-                # 文言修正：「家事ラクコンシェルジュです」から開始
-                ans_prompt = f"あなたは『家事ラクコンシェルジュ』です。以下の質問に回答してください：{msg}"
+                ans_prompt = f"あなたは『家事ラクコンシェルジュ』です。以下の質問に丁寧に回答してください：{msg}"
                 ans = model.generate_content(ans_prompt).text
                 push_text(u_id, f"家事ラクコンシェルジュです。\n\n{ans}")
         except:
@@ -200,7 +201,7 @@ def handle_ai_generation(event, sheet, row_idx):
     food = user_temp_data.get(f"{u_id}_last_food", "あるもの")
     meal = user_temp_data.get(f"{u_id}_meal", "夜"); gen = user_temp_data.get(f"{u_id}_genre", "お任せ")
     try:
-        # プロンプト内の役割指定も修正
+        # 家事ラクコンシェルジュとしての役割指定
         prompt = f"家事ラクコンシェルジュとして提案。構成:{fam}/時間:{meal}/気分:{gen}/食材:{food}/制限:{ng_all}。15分、150円目安レシピを1つ。URL不可。"
         res = model.generate_content(prompt)
         qr = QuickReply(items=[
@@ -209,7 +210,6 @@ def handle_ai_generation(event, sheet, row_idx):
             QuickReplyItem(action=PostbackAction(label="🏠 戻る", data="step=reset_meal"))
         ])
         
-        # AI回答の冒頭に固定の挨拶を添える
         final_text = f"家事ラクコンシェルジュです。\n\n{res.text}"
         
         with ApiClient(conf) as c:
