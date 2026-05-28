@@ -1,5 +1,5 @@
-Flask==3.0.3
-line-bot-sdk==3.12.0
-google-generativeai==0.3.1
-gspread==5.12.0
-oauth2client==4.1.3
+Flask
+line-bot-sdk
+google-generativeai
+gspread
+oauth2client
