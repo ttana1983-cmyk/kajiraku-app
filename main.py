@@ -1,6 +1,6 @@
 import os
 import sys
-from flask import Flask, request, abort
+from flask import Flask, request, abort, render_template, jsonify
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -28,7 +28,48 @@ if channel_secret is None or channel_access_token is None:
 configuration = Configuration(access_token=channel_access_token)
 handler = WebhookHandler(channel_secret)
 
-# --- Webhookの入り口 ---
+# --- 1. LIFFページ（トップ画面）を表示する設定 ---
+@app.route("/")
+def index():
+    # templatesフォルダの中のindex.htmlを表示します
+    return render_template("index.html")
+
+# --- 2. レシピ生成API（LIFFから呼ばれる処理） ---
+@app.route("/api/generate-recipe")
+def generate_recipe():
+    query = request.args.get('query', '')
+    
+    # 本来はここでAI（Gemini等）を動かしますが、まずはテスト用にデータを返します
+    # 店長、ここを後ほどAI連携に書き換えましょう！
+    recipe_data = {
+        "name": f"{query}で作る！コンシェルジュ特製メニュー",
+        "time": "15分",
+        "cost": "約250円",
+        "main": "メイン食材",
+        "tip": "強火でサッと！",
+        "ingredients": [
+            {"name": "メイン食材", "amount": "200g"},
+            {"name": "付け合わせ野菜", "amount": "1/2個"},
+            {"name": "調味料セット", "amount": "少々"}
+        ],
+        "steps": [
+            "1. 食材を一口大に切り、下味をつけます。",
+            "2. フライパンを熱し、焼き色がつくまで炒めます。",
+            "3. 最後に調味料を絡めて完成です！"
+        ]
+    }
+    return jsonify(recipe_data)
+
+# --- 3. 買い物リスト保存API ---
+@app.route("/api/add-to-cart", methods=['POST'])
+def add_to_cart():
+    data = request.get_json()
+    items = data.get('items', [])
+    print(f"買い物リストに追加: {items}")
+    # ここでスプレッドシート等に保存する処理を入れます
+    return jsonify({"status": "success"})
+
+# --- 4. LINE Webhookの入り口 ---
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['x-line-signature']
@@ -39,47 +80,36 @@ def callback():
         abort(400)
     return 'OK'
 
-# --- メッセージを受け取った時の処理 ---
+# --- 5. LINEメッセージを受け取った時の処理 ---
 @handler.add(MessageEvent, content_type=TextMessageContent)
 def handle_message(event):
     text = event.message.text
     tk = event.reply_token
 
-    # 「今日のレシピ提案」ボタンなどが押された時の判定
     if "レシピ" in text or "献立" in text:
         handle_recipe_induction(event, tk)
     else:
-        # その他のメッセージへの返信
         send_reply(tk, "コンシェルジュです。左下のメニューからレシピの提案ができますよ！")
 
-# --- LIFFへの誘導ロジック (ここがキモ！) ---
+# --- 6. LIFFへの誘導ロジック ---
 def handle_recipe_induction(event, tk):
-    """
-    ユーザーをLIFFへ誘導する。
-    リプライを即座に完了させることで、400エラーを防ぎ、メッセージ数を節約する。
-    """
-    # 店長のLIFF URL
     base_url = "https://liff.line.me/2010225388-rXh2LiOR"
-    
-    # ユーザーが入力した言葉をパラメータとして渡す（LIFF側で解析するため）
-    # 空白や特殊文字を考慮して本当はURLエンコードが必要ですが、まずはシンプルに。
+    # ユーザーが送ったテキストをそのままパラメータにしてLIFFへ送る
     target_url = f"{base_url}?query={event.message.text}"
 
     message_text = (
-        "ありがとうございます！コンシェルジュが今の気分にぴったりの献立を検討中です。\n\n"
+        "ありがとうございます！今の気分にぴったりの献立を検討中です。\n\n"
         "準備が整い次第、以下のページでレシピを表示します。足りない食材のチェックもこちらからどうぞ！"
     )
 
-    # クイックリプライにLIFFを開くアクションを設定
     quick_reply = QuickReply(items=[
         QuickReplyItem(
             action=URIAction(label="🍳 レシピを確認する", uri=target_url)
         )
     ])
-
     send_reply(tk, message_text, quick_reply=quick_reply)
 
-# --- 返信用共通関数 ---
+# --- 7. 返信用共通関数 ---
 def send_reply(tk, text, quick_reply=None):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
