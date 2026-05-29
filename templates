@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カジラク・レシピコンシェルジュ</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        :root {
+            --bg-color: #fffaf1;
+            --accent-color: #a8b89e; /* Sage Green */
+            --text-color: #433d3c;
+            --sub-text: #8c857e;
+            --card-bg: #ffffff;
+        }
+        body {
+            font-family: sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0; padding: 0;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .container { width: 100%; max-width: 500px; padding-bottom: 100px; }
+        
+        /* 読み込み中表示 */
+        #loading {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 80vh; text-align: center;
+        }
+        .spinner {
+            width: 50px; height: 50px; border: 5px solid rgba(168,184,158, 0.3);
+            border-top: 5px solid var(--accent-color); border-radius: 50%;
+            animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* レシピ表示エリア */
+        #recipe-content { display: none; padding: 20px; }
+        .recipe-title { font-size: 24px; font-weight: bold; margin-bottom: 15px; border-left: 5px solid var(--accent-color); padding-left: 10px; }
+        
+        .status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 25px; }
+        .status-item { background: var(--card-bg); border-radius: 8px; padding: 10px 5px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .status-item i { color: var(--accent-color); font-size: 18px; display: block; margin-bottom: 5px; }
+        .status-label { font-size: 10px; color: var(--sub-text); display: block; }
+        .status-value { font-size: 12px; font-weight: bold; }
+
+        .ingredient-list { background: var(--card-bg); border-radius: 12px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .ingredient-item { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0ede6; }
+        .ingredient-item:last-child { border-bottom: none; }
+        .ingredient-item input { width: 20px; height: 20px; accent-color: var(--accent-color); margin-right: 15px; }
+        
+        .footer-action {
+            position: fixed; bottom: 0; width: 100%; max-width: 500px;
+            background: white; padding: 20px; box-shadow: 0 -5px 15px rgba(0,0,0,0.05);
+            display: flex; justify-content: center; box-sizing: border-box;
+        }
+        .sync-btn {
+            background-color: var(--accent-color); color: white; border: none;
+            padding: 15px; border-radius: 30px; font-size: 16px; font-weight: bold; width: 100%;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="loading">
+        <div class="spinner"></div>
+        <p>コンシェルジュが献立を検討中...<br>（10秒ほどかかる場合があります）</p>
+    </div>
+
+    <div id="recipe-content">
+        <div id="recipe-name" class="recipe-title"></div>
+        
+        <div class="status-grid">
+            <div class="status-item"><i class="fa-solid fa-clock"></i><span class="status-label">時短</span><span id="time" class="status-value"></span></div>
+            <div class="status-item"><i class="fa-solid fa-coins"></i><span class="status-label">節約</span><span id="cost" class="status-value"></span></div>
+            <div class="status-item"><i class="fa-solid fa-utensils"></i><span class="status-label">メイン</span><span id="main-item" class="status-value"></span></div>
+            <div class="status-item"><i class="fa-solid fa-lightbulb"></i><span class="status-label">コツ</span><span id="tip" class="status-value"></span></div>
+        </div>
+
+        <h3><i class="fa-solid fa-basket-shopping"></i> 材料（不足分にチェック）</h3>
+        <div id="ingredients" class="ingredient-list"></div>
+
+        <h3><i class="fa-solid fa-fire-burner"></i> 作り方</h3>
+        <div id="steps" style="font-size: 15px; color: var(--sub-text);"></div>
+    </div>
+
+    <div id="footer" class="footer-action" style="display:none;">
+        <button class="sync-btn" onclick="syncToCart()">
+            <i class="fa-solid fa-cart-plus"></i>
+            買い物リストに送る
+        </button>
+    </div>
+</div>
+
+<script>
+    // 1. LIFF初期化
+    liff.init({ liffId: "2010225388-rXh2LiOR" }).then(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const query = urlParams.get('query'); // main.pyから送られた「夜ご飯 肉」などの情報
+        
+        if (query) {
+            fetchRecipe(query);
+        }
+    });
+
+    // 2. AIへレシピをリクエスト (店長のサーバーのAPIを叩く)
+    async function fetchRecipe(query) {
+        try {
+            // ここで店長のPythonサーバーに「AIでレシピ作って」とリクエスト
+            const response = await fetch(`/api/generate-recipe?query=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            
+            showRecipe(data);
+        } catch (e) {
+            alert("レシピの取得に失敗しました。");
+        }
+    }
+
+    // 3. 画面にレシピを反映
+    function showRecipe(data) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('recipe-content').style.display = 'block';
+        document.getElementById('footer').style.display = 'flex';
+
+        document.getElementById('recipe-name').innerText = data.name;
+        document.getElementById('time').innerText = data.time;
+        document.getElementById('cost').innerText = data.cost;
+        document.getElementById('main-item').innerText = data.main;
+        document.getElementById('tip').innerText = data.tip;
+
+        // 材料リスト生成
+        const ingDiv = document.getElementById('ingredients');
+        data.ingredients.forEach((item, index) => {
+            ingDiv.innerHTML += `
+                <div class="ingredient-item">
+                    <input type="checkbox" id="item-${index}" value="${item.name}">
+                    <span class="ingredient-name">${item.name}</span>
+                    <span style="margin-left:auto; color:#888;">${item.amount}</span>
+                </div>`;
+        });
+        document.getElementById('steps').innerHTML = data.steps.join('<br><br>');
+    }
+
+    // 4. 買い物リスト連動
+    function syncToCart() {
+        const checkedItems = [];
+        document.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+            checkedItems.push(cb.value);
+        });
+        
+        if (checkedItems.length === 0) {
+            alert("買い物リストに追加する食材がありません。");
+            return;
+        }
+
+        // ここで買い物リスト保存APIを叩く
+        fetch('/api/add-to-cart', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ items: checkedItems })
+        }).then(() => {
+            alert("買い物リストに同期しました！");
+            liff.closeWindow(); // 終わったら閉じる
+        });
+    }
+</script>
+</body>
+</html>
