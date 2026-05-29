@@ -20,7 +20,7 @@ gemini_api_key = os.getenv('GEMINI_API_KEY')
 
 # 変更点2: 新しいSDKでの初期化
 client = genai.Client(api_key=gemini_api_key)
-model_id = 'gemini-1.5-flash'
+model_id = 'gemini-3.5-flash'
 
 configuration = Configuration(access_token=channel_access_token)
 handler = WebhookHandler(channel_secret)
