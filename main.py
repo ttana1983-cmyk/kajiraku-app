@@ -1,7 +1,7 @@
 import os
 import sys
 import json
-import google.generativeai as genai
+import google.genai as genai # 変更点1: 新しいパッケージをインポート
 from flask import Flask, request, abort, render_template, jsonify
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -18,9 +18,9 @@ channel_secret = os.getenv('LINE_CHANNEL_SECRET')
 channel_access_token = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 gemini_api_key = os.getenv('GEMINI_API_KEY')
 
-# Geminiの初期設定
-genai.configure(api_key=gemini_api_key)
-model = genai.GenerativeModel('gemini-3.5-flash')
+# 変更点2: 新しいSDKでの初期化
+client = genai.Client(api_key=gemini_api_key)
+model_id = 'gemini-1.5-flash'
 
 configuration = Configuration(access_token=channel_access_token)
 handler = WebhookHandler(channel_secret)
@@ -30,7 +30,7 @@ handler = WebhookHandler(channel_secret)
 def index():
     return render_template("index.html")
 
-# --- 2. AIレシピ生成 (Gemini API 連携) ---
+# --- 2. AIレシピ生成 (新しいSDKへ対応) ---
 @app.route("/api/generate-recipe")
 def generate_recipe():
     query = request.args.get('query', 'おまかせ')
@@ -65,7 +65,12 @@ def generate_recipe():
     """
 
     try:
-        response = model.generate_content(prompt)
+        # 変更点3: 新しいSDKでの生成処理
+        response = client.models.generate_content(
+            model=model_id,
+            contents=prompt
+        )
+        
         # AIの回答からJSONを抽出
         clean_text = response.text.replace('```json', '').replace('```', '').strip()
         return jsonify(json.loads(clean_text))
@@ -82,11 +87,10 @@ def generate_recipe():
 def add_to_cart():
     data = request.get_json()
     items = data.get('items', [])
-    # ここにスプレッドシートへの保存などを追記可能です
     print(f"買い物リストに追加: {items}")
     return jsonify({"status": "success"})
 
-# --- 以降、LINE Webhook関連 ---
+# --- 4. LINE Webhookの入り口 ---
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['x-line-signature']
@@ -97,6 +101,7 @@ def callback():
         abort(400)
     return 'OK'
 
+# --- 5. LINEメッセージを受け取った時の処理 ---
 @handler.add(MessageEvent, content_type=TextMessageContent)
 def handle_message(event):
     text = event.message.text
@@ -106,6 +111,7 @@ def handle_message(event):
     else:
         send_reply(tk, "コンシェルジュです。左下のメニューからレシピ提案をどうぞ！")
 
+# --- 6. LIFFへの誘導ロジック ---
 def handle_recipe_induction(event, tk):
     base_url = "https://liff.line.me/2010225388-rXh2LiOR"
     target_url = f"{base_url}?query={event.message.text}"
@@ -115,6 +121,7 @@ def handle_recipe_induction(event, tk):
     ])
     send_reply(tk, msg, quick_reply=quick_reply)
 
+# --- 7. 返信用共通関数 ---
 def send_reply(tk, text, quick_reply=None):
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
@@ -124,5 +131,7 @@ def send_reply(tk, text, quick_reply=None):
         ))
 
 if __name__ == "__main__":
+    # 本番環境（Render）ではFlaskの開発サーバーではなく、Gunicornなどを使うことが推奨されますが、
+    # 警告を解消するためにデバッグモードを明示的にOFFにします。
     port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False)
