@@ -22,7 +22,7 @@
     </style>
 </head>
 <body>
-    <div id="loading">Geminiが献立を考えています...<br>少々お待ちくださいね。</div>
+    <div id="loading">コンシェルジュが献立を考えています...<br>少々お待ちくださいね。</div>
 
     <div id="main-content" style="display:none;">
         <div id="recipe-area" class="card">
