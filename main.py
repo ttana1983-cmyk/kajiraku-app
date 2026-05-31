@@ -90,7 +90,7 @@ def send_reply(tk, msg, qr=None):
         line_api = MessagingApi(api_client)
         line_api.reply_message(ReplyMessageRequest(reply_token=tk, messages=[TextMessage(text=msg, quick_reply=qr)]))
 
-# 🧠 AIレシピ生成API（豆腐などのシンプル食材・崩れJSON対策済みの完全版）
+# 🧠 AIレシピ生成API（崩れJSON対策・エラー修正済み完全版）
 @app.route("/api/generate-recipe")
 def generate():
     query = request.args.get('query', 'おまかせ')
@@ -121,7 +121,7 @@ def generate():
     try:
         res = client.models.generate_content(model='gemini-3.5-flash', contents=p)
         
-        # 💡 AIが余計な挨拶やマークアップをつけても、JSONの「{ }」だけを力づくで抜き出す安全ガード
+        # 💡 AIが余計なマークアップや挨拶をつけても、JSONの「{ }」だけを安全に切り出す処理
         raw_text = res.text.strip()
         if "{" in raw_text and "}" in raw_text:
             start_idx = raw_text.find("{")
@@ -135,7 +135,7 @@ def generate():
         
     except Exception as e:
         print(f"Gemini/Parsing Error: {e}")
-        # 💡 万が一データが砕けてパースエラーになっても、画面を止めず最低限動くダミーで救済するフォールバック
+        # 💡 万が一データがパースエラーになっても、画面を止めずにダミーで救済するフォールバック
         fallback = {
             "name": f"美味しいスピード料理 ({query})",
             "time": "12分",
