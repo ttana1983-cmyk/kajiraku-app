@@ -8,7 +8,6 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
-# --- 🚀 パス設定 ---
 base_dir = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(base_dir, 'templates')
 app = Flask(__name__, template_folder=template_dir)
@@ -22,7 +21,7 @@ def wake_up_render():
     try: requests.get(f"https://{request.host}/", timeout=1)
     except: pass
 
-# 🚀 【404対策】 /recipe にも対応
+# 🚀 404対策：どのパスでも枠を表示
 @app.route("/")
 @app.route("/recipe")
 def index():
@@ -44,7 +43,6 @@ def callback():
         abort(400)
     return 'OK'
 
-# --- 🍳 接客フロー（店長指定の完璧な流れ） ---
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     raw_txt = event.message.text.strip()
@@ -62,10 +60,10 @@ def handle_message(event):
         msg = (
             "入力ありがとうございます。\n"
             "今からコンシェルジュがレシピを考えますので、下のボタンからレシピを受け取ってくださいね。\n\n"
-            "買い物リストの画像保存やレシピの画像保存もできますのでご利用ください。"
+            "買い物リストの画像保存やレシピの保存もできますのでご利用ください。"
         )
         encoded_query = requests.utils.quote(raw_txt)
-        # 💡 Safariで開かせ、サーバーを混乱させない「#」を使用
+        # 💡 Safari強制 & サーバーを混乱させないURL
         safe_url = f"https://kajiraku-ai.onrender.com/recipe?openExternalBrowser=1#query={encoded_query}"
         
         qr = QuickReply(items=[
@@ -85,20 +83,21 @@ def send_reply(tk, msg, qr=None):
             messages=[TextMessage(text=msg, quick_reply=qr)]
         ))
 
-# --- 🧠 【中身】Gemini 3.5 Flash 一本勝負 ---
 @app.route("/api/generate-recipe")
 def generate():
     query = request.args.get('query', 'おまかせ')
-    p = f"要望:{query}。15分節約レシピをJSON形式で。{{'name':'','time':'','cost':'','tip':'','ingredients':[{{'name':'','amount':''}}],'steps':[]}}"
+    p = (
+        f"要望:{query}。15分節約レシピをJSONで返して。\n"
+        f"【重要】バリエーションを重視し、毎回違う調理法や味付けを提案して。\n"
+        f"出力形式: {{'name':'','time':'','cost':'','tip':'','ingredients':[{{'name':'','amount':''}}],'steps':[]}}"
+    )
     try:
-        # 最新の 3.5 Flash のみを使用！
         res = client.models.generate_content(model='gemini-3.5-flash', contents=p)
         clean = res.text.replace('```json', '').replace('```', '').strip()
         return jsonify(json.loads(clean))
     except Exception as e:
-        print(f"Gemini 3.5 Error: {e}")
-        # 万が一の時はエラーを返して、ユーザーに再試行を促す
-        return jsonify({"name": "コンシェルジュが少し離席中です...", "steps": ["もう一度お試しください"]})
+        print(f"Error: {e}")
+        return jsonify({"name": "エラーが発生しました", "steps": ["もう一度お試しください"]})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
