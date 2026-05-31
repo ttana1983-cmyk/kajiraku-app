@@ -8,10 +8,12 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
+# --- 🚀 パス設定 ---
 base_dir = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(base_dir, 'templates')
 app = Flask(__name__, template_folder=template_dir)
 
+# 環境設定
 conf = Configuration(access_token=os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
@@ -20,11 +22,10 @@ def wake_up_render():
     try: requests.get(f"https://{request.host}/", timeout=1)
     except: pass
 
-# 🚪 【枠の表示】ここを完全に独立させました！
+# 🚀 【404対策】 /recipe にも対応
 @app.route("/")
+@app.route("/recipe")
 def index():
-    # 後ろにどんな変な文字（食材データなど）が付いていようが一切無視！
-    # 店長が直接開いて確認できた「あの正常なページ枠」を何が何でも100%表示します。
     try:
         return render_template("index.html")
     except:
@@ -37,11 +38,13 @@ def callback():
     sig = request.headers.get('x-line-signature')
     body = request.get_data(as_text=True)
     threading.Thread(target=wake_up_render).start()
-    try: handler.handle(body, sig)
-    except InvalidSignatureError: abort(400)
+    try:
+        handler.handle(body, sig)
+    except InvalidSignatureError:
+        abort(400)
     return 'OK'
 
-# 🍳 LINE接客フロー
+# --- 🍳 接客フロー（店長指定の完璧な流れ） ---
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     raw_txt = event.message.text.strip()
@@ -61,11 +64,9 @@ def handle_message(event):
             "今からコンシェルジュがレシピを考えますので、下のボタンからレシピを受け取ってくださいね。\n\n"
             "買い物リストの画像保存やレシピの画像保存もできますのでご利用ください。"
         )
-        
-        # 🚀 仕組み変更：ボタンのリンク先は「純粋なトップページURL」にする
-        # 食材データはハッシュ（#）の後ろにくっつけて、サーバーを混乱させずにSafariへ渡します
         encoded_query = requests.utils.quote(raw_txt)
-        safe_url = f"https://kajiraku-ai.onrender.com/#query={encoded_query}"
+        # 💡 Safariで開かせ、サーバーを混乱させない「#」を使用
+        safe_url = f"https://kajiraku-ai.onrender.com/recipe?openExternalBrowser=1#query={encoded_query}"
         
         qr = QuickReply(items=[
             QuickReplyItem(action=URIAction(label="🍳 レシピを表示", uri=safe_url))
@@ -79,24 +80,25 @@ def send_quick(tk, msg, opts):
 def send_reply(tk, msg, qr=None):
     with ApiClient(conf) as api_client:
         line_api = MessagingApi(api_client)
-        line_api.reply_message(ReplyMessageRequest(reply_token=tk, messages=[TextMessage(text=msg, quick_reply=qr)]))
+        line_api.reply_message(ReplyMessageRequest(
+            reply_token=tk,
+            messages=[TextMessage(text=msg, quick_reply=qr)]
+        ))
 
-# 🧠 【中身のAI生成】枠が表示された「あと」で、裏から呼び出されるAPI
+# --- 🧠 【中身】Gemini 3.5 Flash 一本勝負 ---
 @app.route("/api/generate-recipe")
 def generate():
     query = request.args.get('query', 'おまかせ')
     p = f"要望:{query}。15分節約レシピをJSON形式で。{{'name':'','time':'','cost':'','tip':'','ingredients':[{{'name':'','amount':''}}],'steps':[]}}"
     try:
+        # 最新の 3.5 Flash のみを使用！
         res = client.models.generate_content(model='gemini-3.5-flash', contents=p)
-        clean = res.text.replace('```json', '').replace('
-```', '').strip()
+        clean = res.text.replace('```json', '').replace('```', '').strip()
         return jsonify(json.loads(clean))
-    except:
-        try:
-            res = client.models.generate_content(model='gemini-1.5-flash', contents=p)
-            clean = res.text.replace('```json', '').replace('```', '').strip()
-            return jsonify(json.loads(clean))
-        except: return jsonify({"name": "エラー", "steps": ["もう一度お試しください"]})
+    except Exception as e:
+        print(f"Gemini 3.5 Error: {e}")
+        # 万が一の時はエラーを返して、ユーザーに再試行を促す
+        return jsonify({"name": "コンシェルジュが少し離席中です...", "steps": ["もう一度お試しください"]})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
