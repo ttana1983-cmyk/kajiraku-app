@@ -4,58 +4,117 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>カジラク・コンシェルジュ</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         :root { --main-bg: #f4f1ea; --olive: #6b705c; --text: #333; }
-        body { background-color: var(--main-bg); color: var(--text); font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); max-width: 500px; width: 100%; border-top: 5px solid var(--olive); }
-        h1 { color: var(--olive); font-size: 1.5rem; text-align: center; }
-        .loading { text-align: center; font-style: italic; color: #999; }
-        .recipe-name { font-weight: bold; font-size: 1.2rem; border-bottom: 2px solid var(--olive); padding-bottom: 5px; margin-bottom: 15px; }
-        .tag { display: inline-block; background: var(--olive); color: white; padding: 2px 8px; border-radius: 5px; font-size: 0.8rem; margin-right: 5px; }
-        ul, ol { padding-left: 20px; line-height: 1.6; }
-        .save-btn { margin-top: 20px; background: var(--olive); color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        body { background-color: var(--main-bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); max-width: 500px; width: 100%; border-top: 5px solid var(--olive); box-sizing: border-box; margin-bottom: 20px; }
+        h1 { color: var(--olive); font-size: 1.5rem; text-align: center; margin-top: 0; }
+        .loading { text-align: center; font-style: italic; color: #999; padding: 40px 0; }
+        .recipe-name { font-weight: bold; font-size: 1.3rem; border-bottom: 2px solid var(--olive); padding-bottom: 5px; margin-bottom: 15px; }
+        .tag { display: inline-block; background: var(--olive); color: white; padding: 3px 10px; border-radius: 5px; font-size: 0.85rem; margin-right: 5px; }
+        .section-title { font-weight: bold; color: var(--olive); margin-top: 20px; margin-bottom: 10px; display: block; border-left: 4px solid var(--olive); padding-left: 10px; }
+        .ingredient-item { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; cursor: pointer; }
+        .ingredient-item input { margin-right: 12px; width: 18px; height: 18px; accent-color: var(--olive); }
+        .ingredient-item.checked { color: #aaa; text-decoration: line-through; }
+        .tip-box { background: #f9f8f4; padding: 10px; border-radius: 8px; font-size: 0.9rem; border: 1px solid #e9e5d5; margin: 15px 0; }
+        .btn-group { max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px; }
+        .btn { border: none; padding: 16px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .save-btn { background: var(--olive); color: white; }
+        .fav-btn { background: #d4a373; color: white; }
+        .retry-btn { background: #e0e0e0; color: #333; }
+        .history-section { max-width: 500px; width: 100%; border-top: 1px solid #ccc; padding-top: 20px; }
+        .history-item { background: white; padding: 12px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     </style>
 </head>
 <body>
-    <div class="card" id="recipe-card">
+    <div id="recipe-area" class="card">
         <h1>カジラク・コンシェルジュ</h1>
-        <div id="content" class="loading">コンシェルジュが献立を検討中です...</div>
+        <div id="content" class="loading">コンシェルジュが検討中です...</div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn fav-btn" onclick="saveToMyRecipes()">⭐ お気に入り保存（アプリ内）</button>
+        <button class="btn save-btn" onclick="saveAsImage()">📸 買い物リスト付きで画像保存</button>
+        <button class="btn retry-btn" onclick="loadRecipe()">🔄 別のレシピを提案</button>
+    </div>
+
+    <div class="history-section">
+        <span class="section-title">📂 保存したレシピ一覧</span>
+        <div id="history-list"></div>
     </div>
 
     <script>
-        async function loadRecipe() {
-            // 💡 URLの「#query=」の後ろにある食材データを取得する魔法
+        let currentRecipe = null;
+        let currentQuery = "おまかせ";
+
+        async function loadRecipe(savedData = null) {
+            const content = document.getElementById('content');
+            content.innerHTML = "検討中です...";
+            content.className = "loading";
+            if (savedData) { displayRecipe(savedData); return; }
             const hash = window.location.hash;
-            let query = "おまかせ";
             if (hash && hash.includes("query=")) {
-                query = decodeURIComponent(hash.split("query=")[1]);
+                currentQuery = decodeURIComponent(hash.split("query=")[1]);
             }
-
             try {
-                // 取得した食材（鶏もも肉など）をAIに正しく伝える
-                const response = await fetch(`/api/generate-recipe?query=${query}`);
-                const data = await response.json();
-
-                const content = document.getElementById('content');
-                content.className = ""; // loadingクラスを消す
-                
-                content.innerHTML = `
-                    <div class="recipe-name">${data.name}</div>
-                    <div><span class="tag">${data.time}</span><span class="tag">${data.cost}</span></div>
-                    <p>💡 コツ：${data.tip}</p>
-                    <strong>材料：</strong>
-                    <ul>${data.ingredients.map(i => `<li>${i.name}: ${i.amount}</li>`).join('')}</ul>
-                    <strong>作り方：</strong>
-                    <ol>${data.steps.map(s => `<li>${s}</li>`).join('')}</ol>
-                    <button class="save-btn" onclick="alert('画像を保存する機能は準備中です！スクリーンショットを撮って保存してくださいね。')">📸 レシピ画像を保存</button>
-                `;
-            } catch (error) {
-                document.getElementById('content').innerText = "申し訳ありません。レシピの作成に失敗しました。";
-            }
+                const response = await fetch(`/api/generate-recipe?query=${currentQuery}&t=${Date.now()}`);
+                currentRecipe = await response.json();
+                displayRecipe(currentRecipe);
+            } catch (error) { content.innerText = "エラーが発生しました。"; }
         }
 
-        // ページが開いたらすぐにレシピを読み込む
-        window.onload = loadRecipe;
+        function displayRecipe(data) {
+            currentRecipe = data;
+            const content = document.getElementById('content');
+            content.className = "";
+            content.innerHTML = `
+                <div class="recipe-name">${data.name}</div>
+                <div><span class="tag">⏱️ ${data.time}</span><span class="tag">💰 ${data.cost}</span></div>
+                <div class="tip-box">💡 <strong>コツ：</strong>${data.tip}</div>
+                <span class="section-title">🛒 買い物リスト</span>
+                <div>${data.ingredients.map((i,idx) => `<label class="ingredient-item" id="i-${idx}"><input type="checkbox" onchange="document.getElementById('i-${idx}').classList.toggle('checked')"><span>${i.name} (${i.amount})</span></label>`).join('')}</div>
+                <span class="section-title">🍳 作り方</span>
+                <ol>${data.steps.map(s => `<li>${s}</li>`).join('')}</ol>
+            `;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function saveToMyRecipes() {
+            if (!currentRecipe) return;
+            let favs = JSON.parse(localStorage.getItem('kajiraku_favs') || '[]');
+            if (!favs.some(f => f.name === currentRecipe.name)) {
+                favs.unshift(currentRecipe);
+                localStorage.setItem('kajiraku_favs', JSON.stringify(favs));
+                alert("保存しました！下の一覧から見返せます。");
+                renderHistory();
+            } else { alert("既に保存されています。"); }
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            const favs = JSON.parse(localStorage.getItem('kajiraku_favs') || '[]');
+            if (favs.length === 0) { list.innerHTML = '<p style="font-size:0.8rem;color:#999;">保存されたレシピはありません。</p>'; return; }
+            list.innerHTML = favs.map(f => `<div class="history-item" onclick='displayRecipe(${JSON.stringify(f)})'><span>${f.name}</span><small>表示 ＞</small></div>`).join('');
+        }
+
+        async function saveAsImage() {
+            const element = document.getElementById('recipe-area');
+            const canvas = await html2canvas(element, { backgroundColor: '#f4f1ea', scale: 2 });
+            const link = document.createElement('a');
+            link.download = `kajiraku_${new Date().getTime()}.png`;
+            link.href = canvas.toDataURL("image/png");
+            link.click();
+        }
+
+        window.onload = () => {
+            if (window.location.hash === "#viewHistory") {
+                document.getElementById('content').innerHTML = "保存済みのレシピをチェック🍳";
+                document.getElementById('content').className = "";
+                setTimeout(() => document.querySelector('.history-section').scrollIntoView({ behavior: 'smooth' }), 500);
+            } else { loadRecipe(); }
+            renderHistory();
+        };
     </script>
 </body>
 </html>
