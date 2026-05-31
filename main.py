@@ -8,7 +8,7 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
-# --- 🚀 パス設定 ---
+# --- 🚀 パス設定（Japandiデザインを絶対に見失わない設定） ---
 base_dir = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(base_dir, 'templates')
 
@@ -17,6 +17,7 @@ app = Flask(__name__, template_folder=template_dir)
 # 環境設定
 conf = Configuration(access_token=os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
+# 最新のGenAIクライアント
 client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
 # Renderのスリープ対策
@@ -46,39 +47,40 @@ def callback():
         abort(400)
     return 'OK'
 
-# --- 🍳 接客フロー（店長指定：判定をより確実に強化） ---
+# --- 🍳 接客フロー（店長指定：今日のレシピ→時間帯→ジャンル→食材） ---
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    # 前後の空白を削除して判定を正確にします
     raw_txt = event.message.text.strip()
     tk = event.reply_token
 
-    # 1. 最優先：入り口（「今日のレシピ」が含まれていたら、他の判定より先にここへ飛ばす）
+    # 1. 入り口（「今日のレシピ」という言葉を最優先で検知）
     if "今日のレシピ" in raw_txt:
         send_quick(tk, "カジラク・コンシェルジュです🍳\nいつのご飯を考えましょうか？", ["朝ごはん", "昼ごはん", "夜ごはん"])
 
-    # 2. 時間帯の選択（朝・昼・夜）
+    # 2. 時間帯の選択
     elif raw_txt in ["朝ごはん", "昼ごはん", "夜ごはん"]:
         send_quick(tk, f"{raw_txt}ですね！ジャンルはどうしますか？", 
                    [f"{raw_txt}/和風", f"{raw_txt}/洋風", f"{raw_txt}/中華", f"{raw_txt}/お任せ"])
 
-    # 3. ジャンルの確定（スラッシュが含まれる場合）
+    # 3. ジャンルの確定
     elif "/" in raw_txt and any(g in raw_txt for g in ["和風", "洋風", "中華", "お任せ"]):
         clean_text = raw_txt.replace('/', ' ')
         msg = f"【{clean_text}】ですね。承りました。\n\n冷蔵庫の中で優先的に使いたい食材はありますか？\n（例：鶏肉、キャベツ、特になし）"
         send_reply(tk, msg)
 
-    # 4. それ以外（これをすべて「食材」として扱う）
+    # 4. 食材入力 & 外部ブラウザへ誘導
     else:
-        # 店長指定の案内メッセージ
         msg = (
             "入力ありがとうございます。\n"
             "今からコンシェルジュがレシピを考えますので、下のボタンからレシピを受け取ってくださいね。\n\n"
             "買い物リストの画像保存やレシピの画像保存もできますのでご利用ください。"
         )
         
-        # 食材をクエリに入れてLIFFへ
-        liff_url = f"https://liff.line.me/2010225388-rXh2LiOR?query={requests.utils.quote(raw_txt)}"
+        # ユーザーが入力した食材をエンコード
+        encoded_query = requests.utils.quote(raw_txt)
+        # LIFF ID: 2010225388-rXh2LiOR
+        # 外部ブラウザで開くパラメータを追加 (?openExternalBrowser=1)
+        liff_url = f"https://liff.line.me/2010225388-rXh2LiOR?query={encoded_query}&openExternalBrowser=1"
         
         qr = QuickReply(items=[
             QuickReplyItem(action=URIAction(label="🍳 レシピを表示", uri=liff_url))
@@ -98,19 +100,19 @@ def send_reply(tk, msg, qr=None):
             messages=[TextMessage(text=msg, quick_reply=qr)]
         ))
 
-# --- 🚀 最新 Gemini 3.5 Flash によるレシピ生成 ---
+# --- 🚀 最新 Gemini 3.5 Flash モデルによる爆速レシピ生成 ---
 @app.route("/api/generate-recipe")
 def generate():
     query = request.args.get('query', 'おまかせ')
     p = f"要望:{query}。15分節約レシピをJSON形式で。{{'name':'','time':'','cost':'','tip':'','ingredients':[{{'name':'','amount':''}}],'steps':[]}}"
     try:
-        # 【店長指定】最新 3.5 Flash
+        # 【店長指定】最新の gemini-3.5-flash を使用
         res = client.models.generate_content(model='gemini-3.5-flash', contents=p)
         clean = res.text.replace('```json', '').replace('```', '').strip()
         return jsonify(json.loads(clean))
     except Exception as e:
         print(f"Error: {e}")
-        # フォールバック
+        # 万が一の予備で 2.0-flash / 1.5-flash を試行
         try:
             res = client.models.generate_content(model='gemini-2.0-flash', contents=p)
             clean = res.text.replace('```json', '').replace('```', '').strip()
