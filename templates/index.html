@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カジラク・コンシェルジュ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500&display=swap');
+        body {
+            font-family: 'Noto+Sans+JP', sans-serif;
+            background-color: #f8f7f2; /* Japandiウォームホワイト */
+            color: #333;
+        }
+        .recipe-card {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            border: 1px solid #e0dcd0;
+        }
+        .btn-save {
+            background-color: #6b705c; /* オリーブ・アースカラー */
+            color: white;
+            transition: all 0.3s;
+        }
+        .btn-save:hover {
+            background-color: #a5a58d;
+        }
+        .loader {
+            border: 3px solid #e0dcd0;
+            border-top: 3px solid #6b705c;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-md mx-auto">
+        <div id="loading" class="flex flex-col items-center justify-center min-h-[60vh]">
+            <div class="loader mb-4"></div>
+            <p class="text-gray-600 font-medium">コンシェルジュが献立を検討中です...</p>
+        </div>
+
+        <div id="recipe-content" class="hidden">
+            <div class="recipe-card p-6 mb-6" id="capture-area">
+                <h1 id="recipe-name" class="text-xl font-bold mb-4 text-gray-800 border-b pb-2 border-gray-100"></h1>
+                
+                <div class="flex gap-4 mb-6 text-sm text-gray-500">
+                    <span id="recipe-time">🕒 --分</span>
+                    <span id="recipe-cost">💰 --円</span>
+                </div>
+
+                <div class="mb-6">
+                    <h2 class="font-bold text-gray-700 mb-2">🛒 買い物リスト</h2>
+                    <ul id="ingredients" class="space-y-1 text-sm text-gray-600 list-disc pl-5"></ul>
+                </div>
+
+                <div class="mb-6">
+                    <h2 class="font-bold text-gray-700 mb-2">🍳 作り方</h2>
+                    <ol id="steps" class="space-y-3 text-sm text-gray-600 list-decimal pl-5"></ol>
+                </div>
+
+                <div id="recipe-tip" class="p-3 bg-gray-50 rounded-lg text-xs italic text-gray-500 border-l-4 border-gray-300"></div>
+            </div>
+
+            <button onclick="saveImage()" class="w-full py-4 rounded-xl btn-save font-bold shadow-lg">
+                📸 レシピ画像を保存
+            </button>
+        </div>
+    </div>
+
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script>
+        // URLからクエリを取得してAPIを叩く
+        async function fetchRecipe() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const query = urlParams.get('query') || 'おまかせ';
+            
+            try {
+                const response = await fetch(`/api/generate-recipe?query=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                
+                document.getElementById('recipe-name').innerText = data.name;
+                document.getElementById('recipe-time').innerText = `🕒 ${data.time}`;
+                document.getElementById('recipe-cost').innerText = `💰 ${data.cost}`;
+                document.getElementById('recipe-tip').innerText = `💡 楽カジPoint: ${data.tip}`;
+
+                const ingList = document.getElementById('ingredients');
+                data.ingredients.forEach(i => {
+                    const li = document.createElement('li');
+                    li.innerText = `${i.name}：${i.amount}`;
+                    ingList.appendChild(li);
+                });
+
+                const stepList = document.getElementById('steps');
+                data.steps.forEach(s => {
+                    const li = document.createElement('li');
+                    li.innerText = s;
+                    stepList.appendChild(li);
+                });
+
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('recipe-content').classList.remove('hidden');
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('コンシェルジュが離席中です。再度お試しください。');
+            }
+        }
+
+        // 画像として保存
+        function saveImage() {
+            const area = document.getElementById('capture-area');
+            html2canvas(area, { backgroundColor: '#f8f7f2', scale: 2 }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `kaji-raku-recipe.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+
+        window.onload = fetchRecipe;
+    </script>
+</body>
+</html>
