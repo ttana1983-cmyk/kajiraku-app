@@ -122,16 +122,18 @@ def generate():
         res = client.models.generate_content(model='gemini-3.5-flash', contents=p)
         
         # 💡 AIが余計なマークアップや挨拶をつけても、JSONの「{ }」だけを安全に切り出す処理
+        # 💡 AIの余計な文字を削る処理（これを1行で書くのが一番安全です）
         raw_text = res.text.strip()
         if "{" in raw_text and "}" in raw_text:
             start_idx = raw_text.find("{")
             end_idx = raw_text.rfind("}") + 1
             clean = raw_text[start_idx:end_idx]
         else:
-            clean = raw_text.replace('
-```json', '').replace('```', '').strip()
+            # ここがエラーの起きていた131行目周辺です
+            clean = raw_text.replace('```json', '').replace('```', '').strip()
             
         return jsonify(json.loads(clean))
+
         
     except Exception as e:
         print(f"Gemini/Parsing Error: {e}")
