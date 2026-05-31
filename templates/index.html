@@ -9,8 +9,8 @@
         :root { --main-bg: #f4f1ea; --olive: #6b705c; --text: #333; }
         body { background-color: var(--main-bg); color: var(--text); font-family: sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); max-width: 500px; width: 100%; border-top: 5px solid var(--olive); box-sizing: border-box; margin-bottom: 20px; }
-        h1 { color: var(--olive); font-size: 1.5rem; text-align: center; margin-top: 0; }
-        .loading { text-align: center; font-style: italic; color: #999; padding: 40px 0; }
+        h1 { color: var(--olive); font-size: 1.5rem; text-align: center; margin-top: 0; margin-bottom: 20px; }
+        .loading { text-align: center; font-style: italic; color: #6b705c; padding: 40px 0; line-height: 1.8; font-weight: bold; }
         .recipe-name { font-weight: bold; font-size: 1.3rem; border-bottom: 2px solid var(--olive); padding-bottom: 5px; margin-bottom: 15px; }
         .tag { display: inline-block; background: var(--olive); color: white; padding: 3px 10px; border-radius: 5px; font-size: 0.85rem; margin-right: 5px; }
         .section-title { font-weight: bold; color: var(--olive); margin-top: 20px; margin-bottom: 10px; display: block; border-left: 4px solid var(--olive); padding-left: 10px; }
@@ -19,27 +19,71 @@
         .ingredient-item.checked { color: #aaa; text-decoration: line-through; }
         .tip-box { background: #f9f8f4; padding: 10px; border-radius: 8px; font-size: 0.9rem; border: 1px solid #e9e5d5; margin: 15px 0; }
         .btn-group { max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; margin-bottom: 30px; }
-        .btn { border: none; padding: 16px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .btn { border: none; padding: 16px; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 1rem; text-align: center; text-decoration: none; }
         .save-btn { background: var(--olive); color: white; }
         .fav-btn { background: #d4a373; color: white; }
         .retry-btn { background: #e0e0e0; color: #333; }
+        
+        /* 📋 詳細なヒアリング画面のスタイル */
+        .settings-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 100; overflow-y: auto; }
+        .settings-card { background: white; padding: 25px; border-radius: 15px; max-width: 450px; width: 90%; margin: 20px auto; box-sizing: border-box; }
+        .settings-card h2 { color: var(--olive); font-size: 1.2rem; margin-top: 0; }
+        .form-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .form-row label { font-size: 0.9rem; }
+        .form-row input { width: 70px; padding: 5px; text-align: center; border: 1px solid #ccc; border-radius: 5px; }
+        .text-input { width: 100%; padding: 10px; margin: 8px 0 15px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem; }
+        
         .history-section { max-width: 500px; width: 100%; border-top: 1px solid #ccc; padding-top: 20px; }
         .history-item { background: white; padding: 12px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     </style>
 </head>
 <body>
-    <div id="recipe-area" class="card">
-        <h1>カジラク・コンシェルジュ</h1>
-        <div id="content" class="loading">コンシェルジュが検討中です...</div>
+
+    <!-- 👨‍👩‍👧 家族構成ヒアリング画面（詳細版） -->
+    <div id="settings-modal" class="settings-overlay">
+        <div class="settings-card">
+            <h2>👨‍👩‍👧 カジラク プロフィール設定</h2>
+            <p style="font-size: 0.8rem; color: #666; margin-bottom: 15px;">ご家族に合わせた完璧なボリュームと安心をお届けします。</p>
+            
+            <span style="font-weight:bold; font-size:0.9rem; color:var(--olive);">【家族構成】</span>
+            <div style="margin: 10px 0 20px 0;">
+                <div class="form-row"><label>成人男性 (13歳以上)</label><input type="number" id="m-adult" value="1" min="0"></div>
+                <div class="form-row"><label>成人女性 (13歳以上)</label><input type="number" id="f-adult" value="1" min="0"></div>
+                <div class="form-row"><label>お子様 (8〜12歳)</label><input type="number" id="c-high" value="0" min="0"></div>
+                <div class="form-row"><label>お子様 (4〜7歳)</label><input type="number" id="c-mid" value="0" min="0"></div>
+                <div class="form-row"><label>お子様 (0〜3歳)</label><input type="number" id="c-low" value="0" min="0"></div>
+            </div>
+
+            <span style="font-weight:bold; font-size:0.9rem; color:var(--olive);">【安心除外設定】</span>
+            <label style="font-size:0.85rem; display:block; margin-top:10px;">アレルギー食材</label>
+            <input type="text" id="allergy-input" class="text-input" placeholder="例：卵、牛乳、小麦（なければ なし）">
+            
+            <label style="font-size:0.85rem; display:block;">嫌いなもの・レシピに入れないもの</label>
+            <input type="text" id="dislike-input" class="text-input" placeholder="例：ピーマン、しいたけ、辛いもの">
+
+            <button class="btn save-btn" style="width: 100%;" onclick="saveSettings()">設定を保存する</button>
+        </div>
     </div>
 
+    <!-- 🍳 レシピ表示エリア -->
+    <div id="recipe-area" class="card">
+        <h1>カジラク・コンシェルジュ</h1>
+        <!-- 💡 初期表示を店長のおもてなしメッセージに固定！ -->
+        <div id="content" class="loading">ただいまコンシェルジュが準備しています。<br>少しお待ちください。☕</div>
+        <div id="profile-summary" style="font-size: 0.75rem; color: #888; text-align: center; margin-top: 15px; border-top: 1px dashed #ddd; padding-top: 10px; cursor: pointer;" onclick="document.getElementById('settings-modal').style.display='flex'">
+            設定を変更する ⚙️
+        </div>
+    </div>
+
+    <!-- 操作ボタン -->
     <div class="btn-group">
         <button class="btn fav-btn" onclick="saveToMyRecipes()">⭐ お気に入り保存（アプリ内）</button>
         <button class="btn save-btn" onclick="saveAsImage()">📸 買い物リスト付きで画像保存</button>
         <button class="btn retry-btn" onclick="loadRecipe()">🔄 別のレシピを提案</button>
     </div>
 
-    <div class="history-section">
+    <!-- 📂 保存済み履歴エリア -->
+    <div class="history-section" id="history-section-area">
         <span class="section-title">📂 保存したレシピ一覧</span>
         <div id="history-list"></div>
     </div>
@@ -48,36 +92,89 @@
         let currentRecipe = null;
         let currentQuery = "おまかせ";
 
+        // 設定の保存と確認
+        function saveSettings() {
+            const mAdult = parseInt(document.getElementById('m-adult').value) || 0;
+            const fAdult = parseInt(document.getElementById('f-adult').value) || 0;
+            const cHigh = parseInt(document.getElementById('c-high').value) || 0;
+            const cMid = parseInt(document.getElementById('c-mid').value) || 0;
+            const cLow = parseInt(document.getElementById('c-low').value) || 0;
+            const allergy = document.getElementById('allergy-input').value || "なし";
+            const dislike = document.getElementById('dislike-input').value || "なし";
+
+            let familyText = "";
+            if(mAdult) familyText += `成人男性${mAdult}名 `;
+            if(fAdult) familyText += `成人女性${fAdult}名 `;
+            if(cHigh) familyText += `子供(8-12才)${cHigh}名 `;
+            if(cMid) familyText += `子供(4-7才)${cMid}名 `;
+            if(cLow) familyText += `子供(0-3才)${cLow}名 `;
+            if(!familyText) familyText = "大人2人分";
+
+            localStorage.setItem('kajiraku_profile', JSON.stringify({ text: familyText, allergy, dislike, raw: {mAdult, fAdult, cHigh, cMid, cLow} }));
+            document.getElementById('settings-modal').style.display = 'none';
+
+            if (confirm("プロフィールを設定しました！\nこのまま今日のレシピを提案しますか？")) {
+                loadRecipe();
+            } else {
+                document.getElementById('content').innerHTML = "メニューから機能を選んでください🍳";
+                document.getElementById('content').className = "";
+            }
+        }
+
         async function loadRecipe(savedData = null) {
+            const profile = JSON.parse(localStorage.getItem('kajiraku_profile'));
+            if (!profile && !savedData) {
+                document.getElementById('settings-modal').style.display = 'flex';
+                return;
+            }
+
             const content = document.getElementById('content');
-            content.innerHTML = "検討中です...";
+            content.innerHTML = "ただいまコンシェルジュが準備しています。<br>少しお待ちください。☕";
             content.className = "loading";
+
             if (savedData) { displayRecipe(savedData); return; }
+
             const hash = window.location.hash;
             if (hash && hash.includes("query=")) {
                 currentQuery = decodeURIComponent(hash.split("query=")[1]);
             }
+
             try {
-                const response = await fetch(`/api/generate-recipe?query=${currentQuery}&t=${Date.now()}`);
+                const response = await fetch(`/api/generate-recipe?query=${currentQuery}&family=${encodeURIComponent(profile.text)}&allergy=${encodeURIComponent(profile.allergy)}&dislike=${encodeURIComponent(profile.dislike)}&t=${Date.now()}`);
                 currentRecipe = await response.json();
+                
+                localStorage.setItem('kajiraku_current_shopping', JSON.stringify(currentRecipe));
                 displayRecipe(currentRecipe);
-            } catch (error) { content.innerText = "エラーが発生しました。"; }
+            } catch (error) { content.innerText = "レシピの作成に失敗しました。"; }
         }
 
         function displayRecipe(data) {
             currentRecipe = data;
             const content = document.getElementById('content');
             content.className = "";
+            const profile = JSON.parse(localStorage.getItem('kajiraku_profile')) || {text:'未設定', allergy:'なし', dislike:'なし'};
+            
             content.innerHTML = `
+                <div style="font-size: 0.75rem; color: var(--olive); margin-bottom: 8px; text-align:center; background:#f9f8f4; padding:5px; border-radius:5px;">
+                    👪 ${profile.text} / ⚠️ アレルギー: ${profile.allergy} / ❌ 除外: ${profile.dislike}
+                </div>
                 <div class="recipe-name">${data.name}</div>
                 <div><span class="tag">⏱️ ${data.time}</span><span class="tag">💰 ${data.cost}</span></div>
                 <div class="tip-box">💡 <strong>コツ：</strong>${data.tip}</div>
                 <span class="section-title">🛒 買い物リスト</span>
-                <div>${data.ingredients.map((i,idx) => `<label class="ingredient-item" id="i-${idx}"><input type="checkbox" onchange="document.getElementById('i-${idx}').classList.toggle('checked')"><span>${i.name} (${i.amount})</span></label>`).join('')}</div>
+                <div id="shopping-list-area">${data.ingredients.map((i,idx) => `<label class="ingredient-item" id="i-${idx}"><input type="checkbox" onchange="document.getElementById('i-${idx}').classList.toggle('checked')"><span>${i.name} (${i.amount})</span></label>`).join('')}</div>
                 <span class="section-title">🍳 作り方</span>
-                <ol>${data.steps.map(s => `<li>${s}</li>`).join('')}</ol>
+                <ol style="padding-left: 20px; line-height: 1.7;">${data.steps.map(s => `<li>${s}</li>`).join('')}</ol>
             `;
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            updateSummaryBadge();
+        }
+
+        function updateSummaryBadge() {
+            const profile = JSON.parse(localStorage.getItem('kajiraku_profile'));
+            if(profile) {
+                document.getElementById('profile-summary').innerHTML = `⚙️ 設定変更（${profile.text} / アレルギー：${profile.allergy}）`;
+            }
         }
 
         function saveToMyRecipes() {
@@ -86,34 +183,72 @@
             if (!favs.some(f => f.name === currentRecipe.name)) {
                 favs.unshift(currentRecipe);
                 localStorage.setItem('kajiraku_favs', JSON.stringify(favs));
-                alert("保存しました！下の一覧から見返せます。");
                 renderHistory();
+                alert("アプリ内のお気に入りに保存しました！");
             } else { alert("既に保存されています。"); }
         }
 
         function renderHistory() {
             const list = document.getElementById('history-list');
             const favs = JSON.parse(localStorage.getItem('kajiraku_favs') || '[]');
-            if (favs.length === 0) { list.innerHTML = '<p style="font-size:0.8rem;color:#999;">保存されたレシピはありません。</p>'; return; }
-            list.innerHTML = favs.map(f => `<div class="history-item" onclick='displayRecipe(${JSON.stringify(f)})'><span>${f.name}</span><small>表示 ＞</small></div>`).join('');
+            if (favs.length === 0) { list.innerHTML = '<p style="font-size:0.8rem;color:#999;text-align:center;">保存されたレシピはまだありません。</p>'; return; }
+            list.innerHTML = favs.map(f => `<div class="history-item" onclick='displayRecipe(${JSON.stringify(f)})'><span>${f.name}</span><small style="color:var(--olive);">表示 ＞</small></div>`).join('');
         }
 
         async function saveAsImage() {
             const element = document.getElementById('recipe-area');
             const canvas = await html2canvas(element, { backgroundColor: '#f4f1ea', scale: 2 });
             const link = document.createElement('a');
-            link.download = `kajiraku_${new Date().getTime()}.png`;
+            link.download = `kajiraku_recipe.png`;
             link.href = canvas.toDataURL("image/png");
             link.click();
         }
 
+        function startDirectSearch() {
+            const inputVal = document.getElementById('direct-query-input').value.trim();
+            if (!inputVal) {
+                alert("食材を入力してくださいね！");
+                return;
+            }
+            window.location.hash = `#query=${encodeURIComponent(inputVal)}`;
+            loadRecipe();
+        }
+
+        // 🚀 ハッシュ（#）判定による画面切り替えの完全版
         window.onload = () => {
-            if (window.location.hash === "#viewHistory") {
-                document.getElementById('content').innerHTML = "保存済みのレシピをチェック🍳";
-                document.getElementById('content').className = "";
-                setTimeout(() => document.querySelector('.history-section').scrollIntoView({ behavior: 'smooth' }), 500);
-            } else { loadRecipe(); }
+            const hash = window.location.hash;
+            const content = document.getElementById('content');
+            
+            if (hash === "#editProfile") {
+                document.getElementById('settings-modal').style.display = 'flex';
+            } else if (hash === "#viewHistory") {
+                content.innerHTML = "📂 保存済みのレシピから選んでくださいね。";
+                content.className = "";
+                setTimeout(() => document.getElementById('history-section-area').scrollIntoView({ behavior: 'smooth' }), 300);
+            } else if (hash === "#currentShopping") {
+                const currentShopping = JSON.parse(localStorage.getItem('kajiraku_current_shopping'));
+                if (currentShopping) {
+                    displayRecipe(currentShopping);
+                    setTimeout(() => document.getElementById('shopping-list-area').scrollIntoView({ behavior: 'smooth' }), 300);
+                } else {
+                    content.innerHTML = "まだ作成されたレシピ（買い物リスト）がありません。";
+                    content.className = "";
+                }
+            } else if (hash === "#searchByIngredients") {
+                content.className = "";
+                content.innerHTML = `
+                    <div style="text-align: center; padding: 10px 0;">
+                        <span style="font-weight: bold; color: var(--olive); display: block; margin-bottom: 10px; font-size: 1.1rem;">🍳 どの食材を使いますか？</span>
+                        <p style="font-size: 0.8rem; color: #666; margin-bottom: 15px;">冷蔵庫にあるものや、使いたい食材を入力してください。</p>
+                        <input type="text" id="direct-query-input" class="text-input" placeholder="例：鶏もも肉、玉ねぎ、キャベツ">
+                        <button class="btn save-btn" style="width: 100%;" onclick="startDirectSearch()">この食材でレシピを提案してもらう</button>
+                    </div>
+                `;
+            } else {
+                loadRecipe();
+            }
             renderHistory();
+            updateSummaryBadge();
         };
     </script>
 </body>
