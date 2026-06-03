@@ -22,7 +22,12 @@ def wake_up_render():
     try: requests.get(f"https://{request.host}/", timeout=1)
     except: pass
 
+# 🚀 案内用ページ：UptimeRobotやブラウザがアクセスした時は、LINEチェックを通さず即200（成功）を返す
 @app.route("/")
+def top_page():
+    return "カジラク・コンシェルジュ サーバー稼働中！🍳", 200
+
+# 🍳 アプリ画面用ページ（ハッシュ切り替えのベース）
 @app.route("/recipe")
 def index():
     try: 
@@ -31,6 +36,7 @@ def index():
         path = os.path.join(template_dir, "index.html")
         with open(path, "r", encoding="utf-8") as f: 
             return f.read()
+
 
 @app.route("/callback", methods=['POST'])
 def callback():
